@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Workout Manager",
+    "slug": "workout-manager",
+    "scheme": "workoutmanager",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0F1115",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.cristian.workoutmanager"
+    },
+    "android": {
+      "package": "com.cristian.workoutmanager",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0F1115"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-status-bar"
+    ],
+    "icon": "./assets/icon.png"
+  }
+}
