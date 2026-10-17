@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Vibration } from 'react-native';
 import { prefs } from './prefs';
+import { cancelRestEnd, scheduleRestEnd } from './restNotifications';
 
 /*
  * Rest timer shared by the workout screens, so it keeps running while you move between the
@@ -8,8 +9,8 @@ import { prefs } from './prefs';
  *
  * It stores the moment rest ends (`endsAt`, epoch ms) rather than counting down, so it stays
  * correct if the app is in the background (JS timers pause there). When rest ends while the app
- * is open, the phone vibrates. There is no alert while the app is closed or the screen is off;
- * that would need notifications.
+ * is open, the app vibrates the phone itself. For when it isn't (backgrounded or screen locked),
+ * a local notification is scheduled for the same moment and vibrates instead (restNotifications.ts).
  */
 
 export const REST_PRESETS = [60, 90, 120, 180];
@@ -45,6 +46,12 @@ export function RestTimerProvider({ children }: { children: React.ReactNode }) {
       clearInterval(tick);
       sub.remove();
     };
+  }, [endsAt]);
+
+  // Keep the lock-screen alert in step with the timer: schedule, move or cancel it
+  useEffect(() => {
+    if (endsAt != null) scheduleRestEnd(endsAt);
+    else cancelRestEnd();
   }, [endsAt]);
 
   // Rest over: vibrate (only if we're on time, not when returning to the app much later) and reset
