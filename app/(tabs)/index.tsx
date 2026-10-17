@@ -7,6 +7,7 @@ import Sortable from 'react-native-sortables';
 import { getActiveWorkout, listRoutines, listWorkoutHistory, reorderRoutines, startWorkout } from '../../src/db/repo';
 import { DragHandle } from '../../src/components/DragHandle';
 import { ElapsedTime } from '../../src/components/ElapsedTime';
+import { countRecordsByWorkout } from '../../src/lib/records';
 import type { Routine, Workout, WorkoutSummary } from '../../src/db/types';
 import { Button, Card, Empty, SectionTitle } from '../../src/components/ui';
 import { formatDate, formatTime, formatVolume } from '../../src/lib/format';
@@ -18,13 +19,17 @@ export default function TrainScreen() {
   const [active, setActive] = useState<Workout | null>(null);
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [recent, setRecent] = useState<WorkoutSummary[]>([]);
+  // Record-setting sets per recent workout (shown as 🏆 N)
+  const [prCounts, setPrCounts] = useState(new Map<string, number>());
 
   useFocusEffect(
     useCallback(() => {
       (async () => {
         setActive(await getActiveWorkout(db));
         setRoutines(await listRoutines(db));
-        setRecent(await listWorkoutHistory(db, 5));
+        const last = await listWorkoutHistory(db, 5);
+        setRecent(last);
+        setPrCounts(await countRecordsByWorkout(db, last.map((w) => w.id)));
       })();
     }, [db]),
   );
@@ -110,7 +115,12 @@ export default function TrainScreen() {
         <View style={{ gap: space.sm }}>
           {recent.map((w) => (
             <Card key={w.id} onPress={() => router.push(`/workout/${w.id}`)}>
-              <Text style={font.body}>{w.routine_name ?? 'Free workout'}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text style={[font.body, { flex: 1 }]}>{w.routine_name ?? 'Free workout'}</Text>
+                {prCounts.get(w.id) ? (
+                  <Text style={{ color: colors.accent, fontWeight: '800' }}>🏆 {prCounts.get(w.id)}</Text>
+                ) : null}
+              </View>
               <Text style={font.dim}>
                 {formatDate(w.started_at)} · {w.exercise_count} exercises · {w.set_count} sets ·{' '}
                 {formatVolume(w.volume)}

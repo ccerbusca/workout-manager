@@ -1,14 +1,25 @@
-import React, { useCallback, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, Vibration, View } from 'react-native';
+import Animated, { FadeInDown, FadeOut } from 'react-native-reanimated';
 import { Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { addSet, deleteSet, getExercise, getWorkout, listSets, previousSets, updateSet } from '../../../src/db/repo';
+import {
+  addSet,
+  deleteSet,
+  getExercise,
+  getWorkout,
+  listExerciseSetHistory,
+  listSets,
+  previousSets,
+  updateSet,
+} from '../../../src/db/repo';
 import type { LoadType, Workout, WorkoutSet } from '../../../src/db/types';
 import { Dialog } from '../../../src/components/Dialog';
 import { RestTimerCard } from '../../../src/components/RestTimer';
 import { Button, Card, Empty, Loading, SectionTitle, Stepper } from '../../../src/components/ui';
 import { formatAgo, formatDate, formatLoad, formatTime, formatWeight, parseNumber } from '../../../src/lib/format';
 import { prefs } from '../../../src/lib/prefs';
+import { describeHit, findRecords, mainHit, type PrHit } from '../../../src/lib/records';
 import { useRestTimer } from '../../../src/lib/restTimer';
 import { radius, space, useTheme } from '../../../src/theme';
 
@@ -28,6 +39,28 @@ export default function ExerciseLogScreen() {
   const [weight, setWeight] = useState('');
   const [reps, setReps] = useState('');
   const [editingSetId, setEditingSetId] = useState<string | null>(null);
+  // Personal records among this workout's sets (worked out from the exercise's whole history)
+  const [records, setRecords] = useState(new Map<string, PrHit[]>());
+  // "New PR" banner after logging a record set; hides itself after a few seconds
+  const [banner, setBanner] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    if (!banner) return;
+    const t = setTimeout(() => setBanner(null), 3500);
+    return () => clearTimeout(t);
+  }, [banner]);
+
+  /** Recomputes which of this workout's sets are records (after any add, edit or delete). */
+  const loadRecords = useCallback(async () => {
+    const all = findRecords(await listExerciseSetHistory(db, exerciseId));
+    const mine = new Map<string, PrHit[]>();
+    for (const s of await listSets(db, workoutId, exerciseId)) {
+      const hits = all.get(s.id);
+      if (hits) mine.set(s.id, hits);
+    }
+    setRecords(mine);
+    return mine;
+  }, [db, workoutId, exerciseId]);
 
   const loadType: LoadType = exercise?.load_type ?? 'weight';
   const isFinished = workout?.ended_at != null;
@@ -59,11 +92,12 @@ export default function ExerciseLogScreen() {
         setPrev(last);
         setEditingSetId(null);
         prefill(current, last?.sets ?? [], e.load_type);
+        loadRecords();
       })();
       return () => {
         cancelled = true;
       };
-    }, [db, workoutId, exerciseId]),
+    }, [db, workoutId, exerciseId, loadRecords]),
   );
 
   const refreshSets = async () => {
@@ -79,16 +113,25 @@ export default function ExerciseLogScreen() {
       Dialog.alert('Check your numbers', 'Enter a weight or level (0 for bodyweight) and at least 1 rep.');
       return;
     }
+    let newSetId: string | null = null;
     if (editingSetId) {
       await updateSet(db, editingSetId, w, Math.round(r));
       setEditingSetId(null);
     } else {
-      await addSet(db, workoutId, exerciseId, w, Math.round(r));
+      newSetId = await addSet(db, workoutId, exerciseId, w, Math.round(r));
       // Rest between sets; not when back-filling a past workout
       if (!isFinished && prefs.getRestAutoStart()) rest.start();
     }
     const current = await refreshSets();
     prefill(current, prev?.sets ?? [], loadType);
+    const recs = await loadRecords();
+    // Celebrate a record set just logged (not edits, and not when back-filling a past workout)
+    const hits = newSetId ? recs.get(newSetId) : undefined;
+    if (hits && !isFinished) {
+      const main = mainHit(hits);
+      setBanner([describeHit(main), ...hits.filter((h) => h !== main).map(describeHit)]);
+      Vibration.vibrate([0, 60, 80, 60]);
+    }
   };
 
   const onSetPress = (s: WorkoutSet) => {
@@ -111,7 +154,8 @@ export default function ExerciseLogScreen() {
         onPress: async () => {
           await deleteSet(db, s.id);
           if (editingSetId === s.id) setEditingSetId(null);
-          refreshSets();
+          await refreshSets();
+          loadRecords();
         },
       },
     ]);
@@ -159,6 +203,9 @@ export default function ExerciseLogScreen() {
                   <Text style={[font.body, { flex: 1, fontWeight: '700', fontVariant: ['tabular-nums'] }]}>
                     {formatLoad(s.weight, s.load_type)} × {s.reps}
                   </Text>
+                  {records.has(s.id) ? (
+                    <Text style={{ color: colors.accent, fontWeight: '800', fontSize: 12, marginRight: space.sm }}>🏆 PR</Text>
+                  ) : null}
                   <Text style={font.small}>
                     {isEditing
                       ? 'editing'
@@ -173,6 +220,27 @@ export default function ExerciseLogScreen() {
             <Text style={[font.small, { marginTop: space.xs }]}>Tap a set to edit · long-press to delete</Text>
           </View>
         )}
+
+        {banner ? (
+          <Animated.View
+            entering={FadeInDown.duration(250)}
+            exiting={FadeOut.duration(300)}
+            style={{
+              marginTop: space.lg,
+              padding: space.md,
+              borderRadius: radius.lg,
+              backgroundColor: colors.accent,
+              gap: 2,
+            }}
+          >
+            <Text style={{ color: colors.accentText, fontWeight: '900', letterSpacing: 1 }}>🏆 NEW PR</Text>
+            {banner.map((line) => (
+              <Text key={line} style={{ color: colors.accentText, fontWeight: '600' }}>
+                {line}
+              </Text>
+            ))}
+          </Animated.View>
+        ) : null}
 
         <Card style={{ marginTop: space.lg, gap: space.md }}>
           <View style={{ flexDirection: 'row', gap: space.md }}>

@@ -73,6 +73,17 @@ export interface WorkoutSet {
   created_at: number;
 }
 
+/** One set in an exercise's history, with its workout's start time (for personal records). */
+export interface SetHistoryRow {
+  id: string;
+  workout_id: string;
+  started_at: number;
+  set_index: number;
+  weight: number;
+  reps: number;
+  load_type: LoadType;
+}
+
 /** One point per workout for a given exercise — feeds the progress charts. */
 export interface ExerciseSessionStats {
   workout_id: string;

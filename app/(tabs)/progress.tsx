@@ -11,8 +11,10 @@ import {
   listWorkoutHistory,
 } from '../../src/db/repo';
 import type { ExerciseSessionStats, LoadType, TrainedExercise, WorkoutSummary } from '../../src/db/types';
+import { ConsistencyCard } from '../../src/components/ConsistencyCard';
 import { ExerciseDropdown } from '../../src/components/ExerciseDropdown';
 import { LineChart, type ChartPoint } from '../../src/components/LineChart';
+import { RecordsCard } from '../../src/components/RecordsCard';
 import { Button, Card, Empty, SectionTitle, Segmented } from '../../src/components/ui';
 import { formatDate, formatLoad, formatShortDate, formatVolume } from '../../src/lib/format';
 import { radius, space, useTheme } from '../../src/theme';
@@ -100,70 +102,103 @@ export default function ProgressScreen() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }}>
-      <ExerciseDropdown
-        exercises={exercises}
-        groupsByExercise={groupsByExercise}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
-      />
+      <SectionTitle>Overview</SectionTitle>
+      <ConsistencyCard reloadKey={history} />
 
-      <Card style={{ marginTop: space.md, gap: space.md }}>
-        {units.length > 1 ? (
-          <Segmented
-            options={[
-              { value: 'weight', label: 'Weight (kg)' },
-              { value: 'level', label: 'Machine level' },
-            ]}
-            value={loadType}
-            onChange={setLoadType}
-          />
-        ) : null}
-        <View style={{ flexDirection: 'row', gap: space.xs }}>
-          {metrics.map((x) => (
-            <Pressable
-              key={x.key}
-              onPress={() => setMetric(x.key)}
-              style={{
-                flex: 1,
-                paddingVertical: 8,
-                borderRadius: radius.sm,
-                alignItems: 'center',
-                backgroundColor: m.key === x.key ? colors.surfaceAlt : 'transparent',
-              }}
-            >
-              <Text style={{ color: m.key === x.key ? colors.text : colors.textFaint, fontWeight: '700', fontSize: 13 }}>
-                {x.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-        {points.length > 0 ? <LineChart points={points} unit={m.unit} /> : <Empty title="No sessions" />}
-        <Text style={font.small}>{m.help}</Text>
-      </Card>
-
-      <SectionTitle>{units.length > 1 ? `Sessions (${loadType === 'level' ? 'levels' : 'kg'})` : 'Sessions'}</SectionTitle>
-      <View>
-        {recentSessions.map((s) => (
-          <Pressable
-            key={s.workout_id}
-            onPress={() => router.push(`/workout/${s.workout_id}`)}
-            style={{ flexDirection: 'row', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}
-          >
-            <Text style={[font.dim, { flex: 1 }]}>{formatDate(s.started_at)}</Text>
-            <Text style={[font.body, { fontVariant: ['tabular-nums'] }]}>
-              {s.set_count} sets · top {formatLoad(s.top_weight, loadType)}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-      {stats.length > PREVIEW && selectedId ? (
-        <Button
-          title={`See all ${stats.length} sessions`}
-          variant="secondary"
-          style={{ marginTop: space.md }}
-          onPress={() => router.push({ pathname: '/history', params: { exerciseId: selectedId, unit: loadType } })}
+      {/* Everything about the chosen exercise lives in one panel, headed by the exercise picker */}
+      <SectionTitle>Exercise</SectionTitle>
+      <View
+        style={{
+          borderRadius: radius.lg,
+          borderWidth: 1,
+          borderColor: colors.border,
+          backgroundColor: colors.surface,
+          overflow: 'hidden',
+        }}
+      >
+        <ExerciseDropdown
+          exercises={exercises}
+          groupsByExercise={groupsByExercise}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          embedded
         />
-      ) : null}
+
+        <View style={{ padding: space.lg, gap: space.md }}>
+          {units.length > 1 ? (
+            <Segmented
+              options={[
+                { value: 'weight', label: 'Weight (kg)' },
+                { value: 'level', label: 'Machine level' },
+              ]}
+              value={loadType}
+              onChange={setLoadType}
+            />
+          ) : null}
+          <View style={{ flexDirection: 'row', gap: space.xs }}>
+            {metrics.map((x) => (
+              <Pressable
+                key={x.key}
+                onPress={() => setMetric(x.key)}
+                style={{
+                  flex: 1,
+                  paddingVertical: 8,
+                  borderRadius: radius.sm,
+                  alignItems: 'center',
+                  backgroundColor: m.key === x.key ? colors.surfaceAlt : 'transparent',
+                }}
+              >
+                <Text style={{ color: m.key === x.key ? colors.text : colors.textFaint, fontWeight: '700', fontSize: 13 }}>
+                  {x.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          {points.length > 0 ? <LineChart points={points} unit={m.unit} /> : <Empty title="No sessions" />}
+          <Text style={font.small}>{m.help}</Text>
+        </View>
+
+        {selectedId ? (
+          <>
+            <PanelDivider />
+            <RecordsCard exerciseId={selectedId} unit={loadType} reloadKey={stats} embedded />
+          </>
+        ) : null}
+
+        <PanelDivider />
+        <View style={{ padding: space.lg, paddingTop: space.md }}>
+          <Text style={[font.small, { letterSpacing: 1, fontWeight: '700', marginBottom: space.xs }]}>
+            {units.length > 1 ? `RECENT SESSIONS (${loadType === 'level' ? 'LEVELS' : 'KG'})` : 'RECENT SESSIONS'}
+          </Text>
+          <View>
+            {recentSessions.map((s, i) => (
+              <Pressable
+                key={s.workout_id}
+                onPress={() => router.push(`/workout/${s.workout_id}`)}
+                style={{
+                  flexDirection: 'row',
+                  paddingVertical: 10,
+                  borderBottomWidth: i === recentSessions.length - 1 ? 0 : 1,
+                  borderBottomColor: colors.border,
+                }}
+              >
+                <Text style={[font.dim, { flex: 1 }]}>{formatDate(s.started_at)}</Text>
+                <Text style={[font.body, { fontVariant: ['tabular-nums'] }]}>
+                  {s.set_count} sets · top {formatLoad(s.top_weight, loadType)}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          {stats.length > PREVIEW && selectedId ? (
+            <Button
+              title={`See all ${stats.length} sessions`}
+              variant="secondary"
+              style={{ marginTop: space.md }}
+              onPress={() => router.push({ pathname: '/history', params: { exerciseId: selectedId, unit: loadType } })}
+            />
+          ) : null}
+        </View>
+      </View>
 
       <SectionTitle>Recent workouts</SectionTitle>
       <View style={{ gap: space.sm }}>
@@ -186,4 +221,10 @@ export default function ProgressScreen() {
       ) : null}
     </ScrollView>
   );
+}
+
+/** Thin line between the sections of the exercise panel. */
+function PanelDivider() {
+  const { colors } = useTheme();
+  return <View style={{ height: 1, backgroundColor: colors.border }} />;
 }

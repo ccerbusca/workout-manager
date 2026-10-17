@@ -96,3 +96,8 @@ export function formatSessionSummary(
   const top = best ? `${sets.length > 1 ? 'best ' : ''}${formatLoad(best.weight, best.load_type)} × ${best.reps} rep${best.reps === 1 ? '' : 's'}` : '';
   return [formatDayMonth(startedAt), count, top].filter(Boolean).join(' · ');
 }
+
+/** "1 week", "6 weeks" */
+export function formatWeeks(n: number): string {
+  return `${n} week${n === 1 ? '' : 's'}`;
+}

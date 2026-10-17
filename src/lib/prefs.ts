@@ -32,4 +32,11 @@ export const prefs = {
     return Number.isFinite(n) && n >= 5 ? n : 90;
   },
   setRestSeconds: (s: number) => write('rest.seconds', String(Math.round(s))),
+
+  /** Workouts per week that count toward the streak (Mon–Sun). Default 3. */
+  getWeeklyGoal: (): number => {
+    const n = Number(read('consistency.weeklyGoal'));
+    return Number.isInteger(n) && n >= 1 && n <= 7 ? n : 3;
+  },
+  setWeeklyGoal: (n: number) => write('consistency.weeklyGoal', String(n)),
 };

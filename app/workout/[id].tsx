@@ -16,6 +16,7 @@ import {
 } from '../../src/db/repo';
 import { ElapsedTime } from '../../src/components/ElapsedTime';
 import { RestTimerBar } from '../../src/components/RestTimer';
+import { describeHit, mainHit, recordsForWorkouts, type PrHit } from '../../src/lib/records';
 import type { LoadType, Workout, WorkoutExercise, WorkoutSet } from '../../src/db/types';
 import { ExercisePicker } from '../../src/components/ExercisePicker';
 import { Button, Card, Empty, Loading, SectionTitle } from '../../src/components/ui';
@@ -310,12 +311,15 @@ function UnitToggle(props: { value: LoadType; onChange: (v: LoadType) => void })
 // ─────────────────────────── Finished workout ───────────────────────────
 
 function WorkoutSummaryView({ workout, onEdit }: { workout: Workout; onEdit: () => void }) {
-  const { font } = useTheme();
+  const { colors, font } = useTheme();
   const db = useSQLiteContext();
   const [rows, setRows] = useState<(WorkoutSet & { name: string })[] | null>(null);
+  // Sets that were personal records when this workout was done
+  const [records, setRecords] = useState(new Map<string, PrHit[]>());
 
   useEffect(() => {
     listAllSetsForWorkout(db, workout.id).then(setRows);
+    recordsForWorkouts(db, [workout.id]).then(setRecords);
   }, [db, workout.id]);
 
   if (!rows) return <Loading />;
@@ -353,6 +357,7 @@ function WorkoutSummaryView({ workout, onEdit }: { workout: Workout; onEdit: () 
         <Stat label="Duration" value={formatDuration(workout.started_at, workout.ended_at ?? workout.started_at)} />
         <Stat label="Sets" value={String(rows.length)} />
         <Stat label="Volume" value={formatVolume(volume)} />
+        {records.size > 0 ? <Stat label="PRs" value={`🏆 ${records.size}`} /> : null}
       </View>
 
       {byExercise.size === 0 ? (
@@ -362,14 +367,23 @@ function WorkoutSummaryView({ workout, onEdit }: { workout: Workout; onEdit: () 
           <View key={exId}>
             <SectionTitle>{g.name}</SectionTitle>
             <Card style={{ gap: space.xs }}>
-              {g.sets.map((s) => (
-                <View key={s.id} style={{ flexDirection: 'row' }}>
-                  <Text style={[font.dim, { width: 56 }]}>Set {s.set_index}</Text>
-                  <Text style={[font.body, { fontVariant: ['tabular-nums'] }]}>
-                    {formatLoad(s.weight, s.load_type)} × {s.reps}
-                  </Text>
-                </View>
-              ))}
+              {g.sets.map((s) => {
+                const hits = records.get(s.id);
+                return (
+                  <View key={s.id}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <Text style={[font.dim, { width: 56 }]}>Set {s.set_index}</Text>
+                      <Text style={[font.body, { flex: 1, fontVariant: ['tabular-nums'] }]}>
+                        {formatLoad(s.weight, s.load_type)} × {s.reps}
+                      </Text>
+                      {hits ? <Text style={{ color: colors.accent, fontWeight: '800', fontSize: 12 }}>🏆 PR</Text> : null}
+                    </View>
+                    {hits ? (
+                      <Text style={[font.small, { marginLeft: 56, marginBottom: 2 }]}>{describeHit(mainHit(hits))}</Text>
+                    ) : null}
+                  </View>
+                );
+              })}
             </Card>
           </View>
         ))

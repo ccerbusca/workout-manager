@@ -19,6 +19,8 @@ export function ExerciseDropdown(props: {
   groupsByExercise: Map<string, string[]>;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  /** Render as the header bar of an enclosing panel (accent-tinted, no own border) instead of a card. */
+  embedded?: boolean;
 }) {
   const { colors, font } = useTheme();
   const anchorRef = useRef<View>(null);
@@ -65,19 +67,32 @@ export function ExerciseDropdown(props: {
       <Pressable
         ref={anchorRef}
         onPress={open}
-        style={({ pressed }) => ({
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: space.md,
-          padding: space.lg,
-          borderRadius: radius.lg,
-          borderWidth: 1,
-          borderColor: anchor ? colors.accent : colors.border,
-          backgroundColor: pressed ? colors.surfaceAlt : colors.surface,
-        })}
+        style={({ pressed }) =>
+          props.embedded
+            ? {
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: space.md,
+                padding: space.lg,
+                borderBottomWidth: 1,
+                borderBottomColor: colors.border,
+                // Accent at 10% / 20% alpha over the panel: every theme's accent is #RRGGBB
+                backgroundColor: `${colors.accent}${pressed || anchor ? '33' : '1A'}`,
+              }
+            : {
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: space.md,
+                padding: space.lg,
+                borderRadius: radius.lg,
+                borderWidth: 1,
+                borderColor: anchor ? colors.accent : colors.border,
+                backgroundColor: pressed ? colors.surfaceAlt : colors.surface,
+              }
+        }
       >
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={font.small}>EXERCISE</Text>
+          {props.embedded ? null : <Text style={font.small}>EXERCISE</Text>}
           <Text style={font.h2} numberOfLines={1}>
             {selected?.name ?? 'Choose an exercise'}
           </Text>

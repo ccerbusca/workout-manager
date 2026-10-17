@@ -15,11 +15,12 @@ import { radius, space, THEMES, type ThemeDef, useTheme } from '../src/theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
-/** App settings: theme, rest timer and backup (JSON export / import). Opened from the gear in the tab header. */
+/** App settings: theme, weekly goal, rest timer and backup (JSON export / import). Opened from the gear in the tab header. */
 export default function SettingsScreen() {
   const { colors, font, id: themeId, setTheme } = useTheme();
   const db = useSQLiteContext();
   const [restAutoStart, setRestAutoStart] = useState(prefs.getRestAutoStart);
+  const [weeklyGoal, setWeeklyGoal] = useState(prefs.getWeeklyGoal);
 
   const exportData = async () => {
     try {
@@ -78,6 +79,53 @@ export default function SettingsScreen() {
         {THEMES.map((t) => (
           <ThemeSwatch key={t.id} theme={t} active={t.id === themeId} onPress={() => setTheme(t.id)} />
         ))}
+      </View>
+
+      <SectionTitle>Weekly goal</SectionTitle>
+      <View
+        style={{
+          padding: space.lg,
+          borderRadius: radius.lg,
+          borderWidth: 1,
+          borderColor: colors.border,
+          backgroundColor: colors.surface,
+          gap: space.md,
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+          <Ionicons name="flame-outline" size={22} color={colors.accent} />
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={[font.body, { fontWeight: '700' }]}>Workouts per week</Text>
+            <Text style={font.small}>Weeks that reach this keep your streak going (Progress → Consistency).</Text>
+          </View>
+        </View>
+        <View style={{ flexDirection: 'row', gap: space.xs }}>
+          {[1, 2, 3, 4, 5, 6, 7].map((n) => {
+            const on = n === weeklyGoal;
+            return (
+              <Pressable
+                key={n}
+                onPress={() => {
+                  setWeeklyGoal(n);
+                  prefs.setWeeklyGoal(n);
+                }}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: on }}
+                style={{
+                  flex: 1,
+                  paddingVertical: 10,
+                  borderRadius: radius.sm,
+                  alignItems: 'center',
+                  borderWidth: 1,
+                  borderColor: on ? colors.accent : colors.border,
+                  backgroundColor: on ? colors.accent : colors.surfaceAlt,
+                }}
+              >
+                <Text style={{ color: on ? colors.accentText : colors.text, fontWeight: '800' }}>{n}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
 
       <SectionTitle>Rest timer</SectionTitle>

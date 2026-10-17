@@ -7,6 +7,7 @@ import type {
   BackupWorkout,
   Exercise,
   ImportResult,
+  SetHistoryRow,
   TrainedExercise,
   LoadType,
   MuscleGroup,
@@ -481,19 +482,21 @@ export async function addSet(
   exerciseId: string,
   weight: number,
   reps: number,
-): Promise<void> {
+): Promise<string> {
   const row = await db.getFirstAsync<{ i: number | null }>(
     'SELECT MAX(set_index) AS i FROM workout_sets WHERE workout_id = ? AND exercise_id = ? AND deleted_at IS NULL',
     workoutId, exerciseId,
   );
   const t = now();
+  const id = newId();
   await db.runAsync(
     `INSERT INTO workout_sets (id, workout_id, exercise_id, set_index, weight, reps, load_type, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?,
              COALESCE((SELECT load_type FROM exercises WHERE id = ?), 'weight'),
              ?, ?)`,
-    newId(), workoutId, exerciseId, (row?.i ?? 0) + 1, weight, reps, exerciseId, t, t,
+    id, workoutId, exerciseId, (row?.i ?? 0) + 1, weight, reps, exerciseId, t, t,
   );
+  return id;
 }
 
 export async function updateSet(db: SQLiteDatabase, setId: string, weight: number, reps: number): Promise<void> {
@@ -808,4 +811,45 @@ export async function importBackup(db: SQLiteDatabase, file: BackupFile): Promis
   });
 
   return result;
+}
+
+// ───────────────────────── Personal records ─────────────────────────
+
+/**
+ * Every live set of one exercise, oldest first (by workout start, then set order). The input for
+ * personal-record detection in lib/records.ts, which works out what was a record at the time.
+ */
+export function listExerciseSetHistory(db: SQLiteDatabase, exerciseId: string): Promise<SetHistoryRow[]> {
+  return db.getAllAsync<SetHistoryRow>(
+    `SELECT s.id, s.workout_id, w.started_at, s.set_index, s.weight, s.reps, s.load_type
+     FROM workout_sets s
+     JOIN workouts w ON w.id = s.workout_id AND w.deleted_at IS NULL
+     WHERE s.exercise_id = ? AND s.deleted_at IS NULL
+     ORDER BY w.started_at, s.set_index, s.id`,
+    exerciseId,
+  );
+}
+
+/** Distinct exercises that have sets in any of these workouts. */
+export async function listExercisesInWorkouts(db: SQLiteDatabase, workoutIds: string[]): Promise<string[]> {
+  if (workoutIds.length === 0) return [];
+  const rows = await db.getAllAsync<{ exercise_id: string }>(
+    `SELECT DISTINCT exercise_id FROM workout_sets
+     WHERE deleted_at IS NULL AND workout_id IN (${workoutIds.map(() => '?').join(', ')})`,
+    ...workoutIds,
+  );
+  return rows.map((r) => r.exercise_id);
+}
+
+// ───────────────────────── Consistency ─────────────────────────
+
+/** Every finished workout with its start time and set count, oldest first (for the training calendar). */
+export function listTrainingLog(db: SQLiteDatabase): Promise<{ id: string; started_at: number; set_count: number }[]> {
+  return db.getAllAsync(
+    `SELECT w.id, w.started_at,
+            (SELECT COUNT(*) FROM workout_sets s WHERE s.workout_id = w.id AND s.deleted_at IS NULL) AS set_count
+     FROM workouts w
+     WHERE w.deleted_at IS NULL AND w.ended_at IS NOT NULL
+     ORDER BY w.started_at`,
+  );
 }
