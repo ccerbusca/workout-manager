@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { Dialog } from '../../src/components/Dialog';
 import { useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
@@ -17,6 +17,7 @@ import type { Exercise, MuscleGroup } from '../../src/db/types';
 import { MuscleGroupSelect } from '../../src/components/MuscleGroupSelect';
 import { Button, Card, Field, SectionTitle } from '../../src/components/ui';
 import { space, useTheme } from '../../src/theme';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
 const OTHER = 'Other';
 
@@ -96,7 +97,7 @@ export default function ExercisesScreen() {
   );
 
   return (
-    <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }} keyboardShouldPersistTaps="handled">
+    <KeyboardAwareScrollView bottomOffset={space.lg} contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }} keyboardShouldPersistTaps="handled">
       <Card style={{ gap: space.sm }}>
         <Text style={font.h2}>Add exercise</Text>
         <Field placeholder="Name, e.g. Hip Thrust" value={name} onChangeText={setName} />
@@ -137,6 +138,6 @@ export default function ExercisesScreen() {
           </View>
         </View>
       ))}
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }

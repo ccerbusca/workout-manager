@@ -5,7 +5,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { exerciseStats, getExerciseName, listWorkoutHistory } from '../src/db/repo';
 import type { LoadType } from '../src/db/types';
 import { Empty, Loading } from '../src/components/ui';
-import { formatDate, formatLoad, formatMonthYear, formatVolume } from '../src/lib/format';
+import { formatDate, formatLoad, formatMonthYear, formatVolume, notePreview } from '../src/lib/format';
 import { space, useTheme } from '../src/theme';
 
 /** One row of the list, whichever kind of history is shown. */
@@ -14,6 +14,8 @@ interface Row {
   startedAt: number;
   title: string;
   detail: string;
+  /** Note preview line (all-workouts list only). */
+  note?: string | null;
 }
 
 /**
@@ -52,6 +54,7 @@ export default function HistoryScreen() {
               startedAt: w.started_at,
               title: w.routine_name ?? 'Free workout',
               detail: `${formatDate(w.started_at)} · ${w.set_count} sets · ${formatVolume(w.volume)}`,
+              note: notePreview(w.notes),
             })),
           );
         }
@@ -106,6 +109,11 @@ export default function HistoryScreen() {
           >
             <Text style={font.body}>{item.title}</Text>
             <Text style={[font.dim, { fontVariant: ['tabular-nums'] }]}>{item.detail}</Text>
+            {item.note ? (
+              <Text style={[font.small, { marginTop: 2 }]} numberOfLines={1}>
+                {item.note}
+              </Text>
+            ) : null}
           </Pressable>
         )}
       />

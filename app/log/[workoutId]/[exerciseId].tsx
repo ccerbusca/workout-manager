@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, Vibration, View } from 'react-native';
+import { Pressable, Text, Vibration, View } from 'react-native';
 import Animated, { FadeInDown, FadeOut } from 'react-native-reanimated';
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
@@ -22,6 +22,7 @@ import { prefs } from '../../../src/lib/prefs';
 import { describeHit, findRecords, mainHit, type PrHit } from '../../../src/lib/records';
 import { useRestTimer } from '../../../src/lib/restTimer';
 import { radius, space, useTheme } from '../../../src/theme';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
 /**
  * Logging screen for one exercise in a workout: last time, today's sets, weight/reps steppers and
@@ -165,9 +166,9 @@ export default function ExerciseLogScreen() {
   if (!workout || !exercise) return <Loading />;
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <>
       <Stack.Screen options={{ title: exercise.name }} />
-      <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollView bottomOffset={space.lg} contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }} keyboardShouldPersistTaps="handled">
         {!isFinished ? <RestTimerCard /> : null}
 
         <SectionTitle>{prev ? `Last time · ${formatDate(prev.started_at)} (${formatAgo(prev.started_at)})` : 'Last time'}</SectionTitle>
@@ -264,8 +265,8 @@ export default function ExerciseLogScreen() {
           style={{ marginTop: space.md }}
           onPress={() => router.back()}
         />
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
+    </>
   );
 }
 

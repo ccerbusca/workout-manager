@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { Dialog } from '../../src/components/Dialog';
 import { router, Stack, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
@@ -16,6 +16,7 @@ import {
 } from '../../src/db/repo';
 import { ElapsedTime } from '../../src/components/ElapsedTime';
 import { RestTimerBar } from '../../src/components/RestTimer';
+import { WorkoutNotes } from '../../src/components/WorkoutNotes';
 import { describeHit, mainHit, recordsForWorkouts, type PrHit } from '../../src/lib/records';
 import type { LoadType, Workout, WorkoutExercise, WorkoutSet } from '../../src/db/types';
 import { ExercisePicker } from '../../src/components/ExercisePicker';
@@ -29,6 +30,7 @@ import {
   formatVolume,
 } from '../../src/lib/format';
 import { radius, space, useTheme } from '../../src/theme';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
 export default function WorkoutScreen() {
   const { id, edit } = useLocalSearchParams<{ id: string; edit?: string }>();
@@ -176,7 +178,10 @@ function WorkoutOverview({
             ),
         }}
       />
-      <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2, gap: space.sm }}>
+      <KeyboardAwareScrollView bottomOffset={space.lg}
+        contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2, gap: space.sm }}
+        keyboardShouldPersistTaps="handled"
+      >
         <Text style={[font.dim, { marginBottom: space.xs }]}>
           {isFinished ? (
             `${formatDate(workout.started_at)} · ${formatTime(workout.started_at)} · ${formatDuration(workout.started_at, workout.ended_at ?? workout.started_at)}`
@@ -238,6 +243,10 @@ function WorkoutOverview({
           <Text style={{ color: colors.textDim, fontWeight: '700' }}>+ Add exercise</Text>
         </Pressable>
 
+        <View style={{ marginTop: space.md }}>
+          <WorkoutNotes workoutId={workout.id} initial={workout.notes} />
+        </View>
+
         <View style={{ gap: space.sm, marginTop: space.lg }}>
           {isFinished ? (
             <Button title="Done" variant="secondary" onPress={onDone} />
@@ -248,7 +257,7 @@ function WorkoutOverview({
             </>
           )}
         </View>
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       <ExercisePicker
         visible={pickerOpen}
@@ -348,7 +357,7 @@ function WorkoutSummaryView({ workout, onEdit }: { workout: Workout; onEdit: () 
   };
 
   return (
-    <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }}>
+    <KeyboardAwareScrollView bottomOffset={space.lg} contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }} keyboardShouldPersistTaps="handled">
       <Stack.Screen
         options={{ title: workout.routine_name ?? 'Free workout', headerRight: () => <Button title="Edit" variant="ghost" onPress={onEdit} /> }}
       />
@@ -389,8 +398,12 @@ function WorkoutSummaryView({ workout, onEdit }: { workout: Workout; onEdit: () 
         ))
       )}
 
+      <View style={{ marginTop: space.xl }}>
+        <WorkoutNotes workoutId={workout.id} initial={workout.notes} />
+      </View>
+
       <Button title="Delete workout" variant="danger" onPress={remove} style={{ marginTop: space.xl }} />
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }
 

@@ -1,11 +1,12 @@
 import React, { useCallback, useState } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { createRoutine, listRoutines } from '../../src/db/repo';
 import type { Routine } from '../../src/db/types';
 import { Button, Card, Empty, Field, SectionTitle } from '../../src/components/ui';
 import { space, useTheme } from '../../src/theme';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
 export default function RoutinesScreen() {
   const { font } = useTheme();
@@ -27,7 +28,7 @@ export default function RoutinesScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={{ padding: space.lg }} keyboardShouldPersistTaps="handled">
+    <KeyboardAwareScrollView bottomOffset={space.lg} contentContainerStyle={{ padding: space.lg }} keyboardShouldPersistTaps="handled">
       <Text style={[font.dim, { marginBottom: space.md }]}>
         A routine is a group of exercises you do together (e.g. “Push day”). It isn’t tied to a weekday:
         you pick one when you start a workout.
@@ -54,6 +55,6 @@ export default function RoutinesScreen() {
           ))}
         </View>
       )}
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }

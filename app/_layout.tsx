@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider as NavigationThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SQLiteProvider, type SQLiteDatabase } from 'expo-sqlite';
 import { migrate } from '../src/db/migrations';
 import { seedIfEmpty } from '../src/db/repo';
@@ -18,13 +19,16 @@ export default function RootLayout() {
   return (
     // Needed for drag-and-drop (react-native-sortables uses gesture-handler)
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider>
-        <SQLiteProvider databaseName="workouts.db" onInit={initDb}>
-          <RestTimerProvider>
-            <ThemedApp />
-          </RestTimerProvider>
-        </SQLiteProvider>
-      </ThemeProvider>
+      {/* Keeps focused text boxes above the keyboard (Android edge-to-edge doesn't resize for it) */}
+      <KeyboardProvider>
+        <ThemeProvider>
+          <SQLiteProvider databaseName="workouts.db" onInit={initDb}>
+            <RestTimerProvider>
+              <ThemedApp />
+            </RestTimerProvider>
+          </SQLiteProvider>
+        </ThemeProvider>
+      </KeyboardProvider>
     </GestureHandlerRootView>
   );
 }

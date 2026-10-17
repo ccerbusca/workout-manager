@@ -380,6 +380,15 @@ export async function finishWorkout(db: SQLiteDatabase, id: string): Promise<voi
   await db.runAsync('UPDATE workouts SET ended_at = ?, updated_at = ? WHERE id = ?', t, t, id);
 }
 
+/** Saves a workout's free-text note; blank (or only whitespace) clears it. */
+export async function setWorkoutNotes(db: SQLiteDatabase, id: string, notes: string): Promise<void> {
+  const value = notes.trim() === '' ? null : notes.trim();
+  await db.runAsync(
+    'UPDATE workouts SET notes = ?, updated_at = ? WHERE id = ? AND notes IS NOT ?',
+    value, now(), id, value,
+  );
+}
+
 export async function deleteWorkout(db: SQLiteDatabase, id: string): Promise<void> {
   const t = now();
   await db.withTransactionAsync(async () => {

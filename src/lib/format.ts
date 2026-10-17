@@ -97,6 +97,16 @@ export function formatSessionSummary(
   return [formatDayMonth(startedAt), count, top].filter(Boolean).join(' · ');
 }
 
+/** First line of a note for list previews ("📝 Felt strong, left…"), or null if there's no note. */
+export function notePreview(notes: string | null | undefined, max = 60): string | null {
+  const text = notes?.trim();
+  if (!text) return null;
+  const [first, ...rest] = text.split('\n');
+  const line = first.trim();
+  const cut = line.length > max;
+  return `📝 ${cut ? line.slice(0, max - 1).trimEnd() : line}${cut || rest.length ? '…' : ''}`;
+}
+
 /** "1 week", "6 weeks" */
 export function formatWeeks(n: number): string {
   return `${n} week${n === 1 ? '' : 's'}`;

@@ -17,7 +17,7 @@ import { ElapsedTime } from '../../src/components/ElapsedTime';
 import { countRecordsByWorkout } from '../../src/lib/records';
 import type { Routine, Workout, WorkoutSummary } from '../../src/db/types';
 import { Button, Card, Empty, SectionTitle } from '../../src/components/ui';
-import { formatDate, formatTime, formatVolume } from '../../src/lib/format';
+import { formatDate, formatTime, formatVolume, notePreview } from '../../src/lib/format';
 import { space, useTheme } from '../../src/theme';
 
 export default function TrainScreen() {
@@ -134,6 +134,11 @@ export default function TrainScreen() {
                 {formatDate(w.started_at)} · {w.exercise_count} exercises · {w.set_count} sets ·{' '}
                 {formatVolume(w.volume)}
               </Text>
+              {notePreview(w.notes) ? (
+                <Text style={[font.small, { marginTop: 2 }]} numberOfLines={1}>
+                  {notePreview(w.notes)}
+                </Text>
+              ) : null}
             </Card>
           ))}
         </View>
