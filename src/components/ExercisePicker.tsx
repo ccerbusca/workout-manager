@@ -30,7 +30,7 @@ export function ExercisePicker(props: {
     return all.filter(
       (e) =>
         !exclude.has(e.id) &&
-        (q === '' || e.name.toLowerCase().includes(q) || (e.muscle_group ?? '').toLowerCase().includes(q)),
+        (q === '' || e.name.toLowerCase().includes(q) || (e.muscle_groups ?? '').toLowerCase().includes(q)),
     );
   }, [all, query, props.excludeIds]);
 
@@ -39,8 +39,8 @@ export function ExercisePicker(props: {
   const createAndPick = async () => {
     const name = query.trim();
     if (!name) return;
-    const id = await createExercise(db, name, null);
-    props.onPick({ id, name, muscle_group: null, load_type: 'weight' });
+    const id = await createExercise(db, name, []);
+    props.onPick({ id, name, muscle_groups: null, load_type: 'weight' });
   };
 
   return (
@@ -77,9 +77,9 @@ export function ExercisePicker(props: {
               })}
             >
               <Text style={font.body}>{item.name}</Text>
-              {item.muscle_group || item.load_type === 'level' ? (
+              {item.muscle_groups || item.load_type === 'level' ? (
                 <Text style={font.small}>
-                  {[item.muscle_group, item.load_type === 'level' ? 'machine level' : null].filter(Boolean).join(' · ')}
+                  {[item.muscle_groups, item.load_type === 'level' ? 'machine level' : null].filter(Boolean).join(' · ')}
                 </Text>
               ) : null}
             </Pressable>

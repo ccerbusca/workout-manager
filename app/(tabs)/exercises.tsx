@@ -3,43 +3,68 @@ import { ScrollView, Text, View } from 'react-native';
 import { Dialog } from '../../src/components/Dialog';
 import { useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { createExercise, deleteExercise, listExercises, updateExercise } from '../../src/db/repo';
-import type { Exercise } from '../../src/db/types';
+import {
+  createExercise,
+  createMuscleGroup,
+  deleteExercise,
+  getExerciseMuscleGroupIds,
+  listExerciseMuscleGroupLinks,
+  listExercises,
+  listMuscleGroups,
+  updateExercise,
+} from '../../src/db/repo';
+import type { Exercise, MuscleGroup } from '../../src/db/types';
+import { MuscleGroupSelect } from '../../src/components/MuscleGroupSelect';
 import { Button, Card, Field, SectionTitle } from '../../src/components/ui';
 import { font, space } from '../../src/theme';
+
+const OTHER = 'Other';
 
 export default function ExercisesScreen() {
   const db = useSQLiteContext();
   const [items, setItems] = useState<Exercise[]>([]);
+  const [muscleGroups, setMuscleGroups] = useState<MuscleGroup[]>([]);
+  const [links, setLinks] = useState<{ exercise_id: string; name: string }[]>([]);
   const [name, setName] = useState('');
-  const [group, setGroup] = useState('');
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [groupIds, setGroupIds] = useState<string[]>([]);
+  // An exercise can be listed under several groups, so editing is keyed by "<group>|<exercise id>"
+  // to open the edit card only where it was tapped
+  const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
-  const [editGroup, setEditGroup] = useState('');
+  const [editGroupIds, setEditGroupIds] = useState<string[]>([]);
 
   const load = useCallback(() => {
     listExercises(db).then(setItems);
+    listMuscleGroups(db).then(setMuscleGroups);
+    listExerciseMuscleGroupLinks(db).then(setLinks);
   }, [db]);
   useFocusEffect(load);
 
+  /** Saves a new group to the shared list, so it's offered for every exercise from now on. */
+  const addMuscleGroup = async (groupName: string) => {
+    const g = await createMuscleGroup(db, groupName);
+    setMuscleGroups(await listMuscleGroups(db));
+    return g;
+  };
+
   const add = async () => {
     if (!name.trim()) return;
-    await createExercise(db, name, group);
+    await createExercise(db, name, groupIds);
     setName('');
-    setGroup('');
+    setGroupIds([]);
     load();
   };
 
-  const startEdit = (e: Exercise) => {
-    setEditingId(e.id);
+  const startEdit = async (key: string, e: Exercise) => {
+    setEditingKey(key);
     setEditName(e.name);
-    setEditGroup(e.muscle_group ?? '');
+    setEditGroupIds(await getExerciseMuscleGroupIds(db, e.id));
   };
 
-  const saveEdit = async () => {
-    if (!editingId || !editName.trim()) return;
-    await updateExercise(db, editingId, editName, editGroup);
-    setEditingId(null);
+  const saveEdit = async (e: Exercise) => {
+    if (!editName.trim()) return;
+    await updateExercise(db, e.id, editName, editGroupIds);
+    setEditingKey(null);
     load();
   };
 
@@ -51,53 +76,63 @@ export default function ExercisesScreen() {
         style: 'destructive',
         onPress: async () => {
           await deleteExercise(db, e.id);
-          setEditingId(null);
+          setEditingKey(null);
           load();
         },
       },
     ]);
   };
 
-  // Group by muscle group for a scannable list
+  // Group by muscle group for a scannable list; an exercise appears under each of its groups
+  const groupNamesByExercise = new Map<string, string[]>();
+  for (const l of links) groupNamesByExercise.set(l.exercise_id, [...(groupNamesByExercise.get(l.exercise_id) ?? []), l.name]);
   const groups = new Map<string, Exercise[]>();
   for (const e of items) {
-    const key = e.muscle_group || 'Other';
-    groups.set(key, [...(groups.get(key) ?? []), e]);
+    for (const key of groupNamesByExercise.get(e.id) ?? [OTHER]) groups.set(key, [...(groups.get(key) ?? []), e]);
   }
+  const sections = [...groups.entries()].sort(([a], [b]) =>
+    a === OTHER ? 1 : b === OTHER ? -1 : a.localeCompare(b, undefined, { sensitivity: 'base' }),
+  );
 
   return (
     <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }} keyboardShouldPersistTaps="handled">
       <Card style={{ gap: space.sm }}>
         <Text style={font.h2}>Add exercise</Text>
         <Field placeholder="Name, e.g. Hip Thrust" value={name} onChangeText={setName} />
-        <Field placeholder="Muscle group (optional)" value={group} onChangeText={setGroup} />
+        <MuscleGroupSelect options={muscleGroups} selected={groupIds} onChange={setGroupIds} onCreate={addMuscleGroup} />
         <Button title="Add" onPress={add} disabled={!name.trim()} />
       </Card>
 
-      {[...groups.entries()].map(([g, list]) => (
+      {sections.map(([g, list]) => (
         <View key={g}>
           <SectionTitle>{g}</SectionTitle>
           <View style={{ gap: space.sm }}>
-            {list.map((e) =>
-              editingId === e.id ? (
+            {list.map((e) => {
+              const key = `${g}|${e.id}`;
+              return editingKey === key ? (
                 <Card key={e.id} style={{ gap: space.sm }}>
                   <Field value={editName} onChangeText={setEditName} placeholder="Name" />
-                  <Field value={editGroup} onChangeText={setEditGroup} placeholder="Muscle group" />
+                  <MuscleGroupSelect
+                    options={muscleGroups}
+                    selected={editGroupIds}
+                    onChange={setEditGroupIds}
+                    onCreate={addMuscleGroup}
+                  />
                   <View style={{ flexDirection: 'row', gap: space.sm }}>
-                    <Button title="Save" onPress={saveEdit} style={{ flex: 1 }} />
-                    <Button title="Cancel" variant="secondary" onPress={() => setEditingId(null)} style={{ flex: 1 }} />
+                    <Button title="Save" onPress={() => saveEdit(e)} style={{ flex: 1 }} />
+                    <Button title="Cancel" variant="secondary" onPress={() => setEditingKey(null)} style={{ flex: 1 }} />
                   </View>
                   <Button title="Delete exercise" variant="danger" onPress={() => remove(e)} />
                 </Card>
               ) : (
-                <Card key={e.id} onPress={() => startEdit(e)} style={{ paddingVertical: space.md }}>
+                <Card key={e.id} onPress={() => startEdit(key, e)} style={{ paddingVertical: space.md }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                     <Text style={font.body}>{e.name}</Text>
                     {e.load_type === 'level' ? <Text style={font.small}>LEVEL</Text> : null}
                   </View>
                 </Card>
-              ),
-            )}
+              );
+            })}
           </View>
         </View>
       ))}

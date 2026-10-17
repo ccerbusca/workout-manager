@@ -105,7 +105,7 @@ export default function RoutineEditor() {
                 <Text style={[font.dim, { width: 24 }]}>{i + 1}</Text>
                 <View style={{ flex: 1 }}>
                   <Text style={font.body}>{item.name}</Text>
-                  {item.muscle_group ? <Text style={font.small}>{item.muscle_group}</Text> : null}
+                  {item.muscle_groups ? <Text style={font.small}>{item.muscle_groups}</Text> : null}
                 </View>
                 <IconBtn name="chevron-up" onPress={() => move(i, -1)} disabled={i === 0} />
                 <IconBtn name="chevron-down" onPress={() => move(i, 1)} disabled={i === items.length - 1} />

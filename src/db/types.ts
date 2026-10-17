@@ -4,8 +4,14 @@ export type LoadType = 'weight' | 'level';
 export interface Exercise {
   id: string;
   name: string;
-  muscle_group: string | null;
+  /** Display label of the exercise's muscle groups, e.g. "Chest, Shoulders"; null if none. */
+  muscle_groups: string | null;
   load_type: LoadType;
+}
+
+export interface MuscleGroup {
+  id: string;
+  name: string;
 }
 
 export interface Routine {
@@ -18,7 +24,8 @@ export interface RoutineExercise {
   id: string; // routine_exercises.id
   exercise_id: string;
   name: string;
-  muscle_group: string | null;
+  /** Display label of the exercise's muscle groups, e.g. "Chest, Shoulders"; null if none. */
+  muscle_groups: string | null;
   load_type: LoadType;
   position: number;
 }

@@ -3,6 +3,7 @@ import { newId, now } from '../lib/id';
 import type {
   Exercise,
   LoadType,
+  MuscleGroup,
   ExerciseSessionStats,
   Routine,
   RoutineExercise,
@@ -19,20 +20,21 @@ import type {
 
 // ───────────────────────── Seed ─────────────────────────
 
-const DEFAULT_EXERCISES: [string, string][] = [
-  ['Bench Press', 'Chest'],
-  ['Incline Dumbbell Press', 'Chest'],
-  ['Overhead Press', 'Shoulders'],
-  ['Lateral Raise', 'Shoulders'],
-  ['Squat', 'Legs'],
-  ['Romanian Deadlift', 'Legs'],
-  ['Leg Press', 'Legs'],
-  ['Deadlift', 'Back'],
-  ['Pull-up', 'Back'],
-  ['Barbell Row', 'Back'],
-  ['Lat Pulldown', 'Back'],
-  ['Biceps Curl', 'Arms'],
-  ['Triceps Pushdown', 'Arms'],
+// Keep in sync with migration v6, which regroups these on databases seeded before v5
+const DEFAULT_EXERCISES: [string, string[]][] = [
+  ['Bench Press', ['Chest', 'Shoulders', 'Triceps']],
+  ['Incline Dumbbell Press', ['Chest', 'Shoulders', 'Triceps']],
+  ['Overhead Press', ['Shoulders', 'Triceps']],
+  ['Lateral Raise', ['Shoulders']],
+  ['Squat', ['Quads', 'Glutes']],
+  ['Romanian Deadlift', ['Hamstrings', 'Glutes', 'Lower back']],
+  ['Leg Press', ['Quads', 'Glutes']],
+  ['Deadlift', ['Hamstrings', 'Glutes', 'Lower back', 'Upper back']],
+  ['Pull-up', ['Lats', 'Biceps']],
+  ['Barbell Row', ['Upper back', 'Lats', 'Biceps']],
+  ['Lat Pulldown', ['Lats', 'Biceps']],
+  ['Biceps Curl', ['Biceps']],
+  ['Triceps Pushdown', ['Triceps']],
 ];
 
 export async function seedIfEmpty(db: SQLiteDatabase): Promise<void> {
@@ -40,51 +42,139 @@ export async function seedIfEmpty(db: SQLiteDatabase): Promise<void> {
   if ((row?.n ?? 0) > 0) return;
   const t = now();
   await db.withTransactionAsync(async () => {
-    for (const [name, group] of DEFAULT_EXERCISES) {
-      await db.runAsync(
-        'INSERT INTO exercises (id, name, muscle_group, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-        newId(), name, group, t, t,
-      );
+    for (const [name, groups] of DEFAULT_EXERCISES) {
+      const groupIds: string[] = [];
+      for (const g of groups) groupIds.push(await findOrInsertMuscleGroup(db, g, t));
+      await insertExercise(db, name, groupIds, t);
     }
   });
 }
+
+// ───────────────────────── Muscle groups ─────────────────────────
+
+/** The shared list offered in the muscle-group dropdown. */
+export function listMuscleGroups(db: SQLiteDatabase): Promise<MuscleGroup[]> {
+  return db.getAllAsync<MuscleGroup>(
+    `SELECT id, name FROM muscle_groups WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE`,
+  );
+}
+
+/** Adds a group to the shared list, or returns the existing one with the same name (any case). */
+export async function createMuscleGroup(db: SQLiteDatabase, name: string): Promise<MuscleGroup> {
+  const id = await findOrInsertMuscleGroup(db, name, now());
+  return { id, name: (await db.getFirstAsync<{ name: string }>('SELECT name FROM muscle_groups WHERE id = ?', id))!.name };
+}
+
+async function findOrInsertMuscleGroup(db: SQLiteDatabase, name: string, t: number): Promise<string> {
+  const existing = await db.getFirstAsync<{ id: string }>(
+    'SELECT id FROM muscle_groups WHERE lower(name) = lower(?) AND deleted_at IS NULL',
+    name.trim(),
+  );
+  if (existing) return existing.id;
+  const id = newId();
+  await db.runAsync(
+    'INSERT INTO muscle_groups (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)',
+    id, name.trim(), t, t,
+  );
+  return id;
+}
+
+/** Every (exercise, group) link, for grouping the Exercises tab. */
+export function listExerciseMuscleGroupLinks(
+  db: SQLiteDatabase,
+): Promise<{ exercise_id: string; muscle_group_id: string; name: string }[]> {
+  return db.getAllAsync(
+    `SELECT emg.exercise_id, mg.id AS muscle_group_id, mg.name
+     FROM exercise_muscle_groups emg
+     JOIN muscle_groups mg ON mg.id = emg.muscle_group_id AND mg.deleted_at IS NULL
+     WHERE emg.deleted_at IS NULL`,
+  );
+}
+
+/**
+ * SQL expression for an exercise's groups as one display label ("Chest, Shoulders"), or NULL.
+ * Needs the exercises table aliased as `e`.
+ */
+const MUSCLE_GROUPS_LABEL = `(
+  SELECT group_concat(name, ', ') FROM (
+    SELECT mg.name FROM exercise_muscle_groups emg
+    JOIN muscle_groups mg ON mg.id = emg.muscle_group_id AND mg.deleted_at IS NULL
+    WHERE emg.exercise_id = e.id AND emg.deleted_at IS NULL
+    ORDER BY mg.name COLLATE NOCASE
+  )
+)`;
 
 // ───────────────────────── Exercises ─────────────────────────
 
 export function listExercises(db: SQLiteDatabase): Promise<Exercise[]> {
   return db.getAllAsync<Exercise>(
-    `SELECT id, name, muscle_group, load_type FROM exercises
-     WHERE deleted_at IS NULL
-     ORDER BY name COLLATE NOCASE`,
+    `SELECT e.id, e.name, ${MUSCLE_GROUPS_LABEL} AS muscle_groups, e.load_type FROM exercises e
+     WHERE e.deleted_at IS NULL
+     ORDER BY e.name COLLATE NOCASE`,
   );
 }
 
-export async function createExercise(
-  db: SQLiteDatabase,
-  name: string,
-  muscleGroup: string | null,
-): Promise<string> {
-  // New exercises start in kg; switch to levels with a long-press in a workout (setExerciseLoadType)
-  const id = newId();
-  const t = now();
-  await db.runAsync(
-    `INSERT INTO exercises (id, name, muscle_group, load_type, created_at, updated_at) VALUES (?, ?, ?, 'weight', ?, ?)`,
-    id, name.trim(), muscleGroup?.trim() || null, t, t,
-  );
+export async function createExercise(db: SQLiteDatabase, name: string, muscleGroupIds: string[]): Promise<string> {
+  let id = '';
+  await db.withTransactionAsync(async () => {
+    id = await insertExercise(db, name, muscleGroupIds, now());
+  });
   return id;
+}
+
+async function insertExercise(db: SQLiteDatabase, name: string, muscleGroupIds: string[], t: number): Promise<string> {
+  // New exercises start in kg; switch to levels with a long-press in a workout (setExerciseLoadType).
+  // muscle_group (the pre-v5 text column) is left NULL; groups live in exercise_muscle_groups.
+  const id = newId();
+  await db.runAsync(
+    `INSERT INTO exercises (id, name, load_type, created_at, updated_at) VALUES (?, ?, 'weight', ?, ?)`,
+    id, name.trim(), t, t,
+  );
+  for (const groupId of new Set(muscleGroupIds)) {
+    await db.runAsync(
+      'INSERT INTO exercise_muscle_groups (id, exercise_id, muscle_group_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+      newId(), id, groupId, t, t,
+    );
+  }
+  return id;
+}
+
+/** IDs of the groups an exercise currently belongs to (for the edit form). */
+export async function getExerciseMuscleGroupIds(db: SQLiteDatabase, exerciseId: string): Promise<string[]> {
+  const rows = await db.getAllAsync<{ muscle_group_id: string }>(
+    'SELECT muscle_group_id FROM exercise_muscle_groups WHERE exercise_id = ? AND deleted_at IS NULL',
+    exerciseId,
+  );
+  return rows.map((r) => r.muscle_group_id);
 }
 
 export async function updateExercise(
   db: SQLiteDatabase,
   id: string,
   name: string,
-  muscleGroup: string | null,
+  muscleGroupIds: string[],
 ): Promise<void> {
   // The unit (kg/level) is switched mid-workout with a long-press instead (setExerciseLoadType)
-  await db.runAsync(
-    'UPDATE exercises SET name = ?, muscle_group = ?, updated_at = ? WHERE id = ?',
-    name.trim(), muscleGroup?.trim() || null, now(), id,
-  );
+  const t = now();
+  const wanted = new Set(muscleGroupIds);
+  await db.withTransactionAsync(async () => {
+    await db.runAsync('UPDATE exercises SET name = ?, updated_at = ? WHERE id = ?', name.trim(), t, id);
+    const links = await db.getAllAsync<{ id: string; muscle_group_id: string }>(
+      'SELECT id, muscle_group_id FROM exercise_muscle_groups WHERE exercise_id = ? AND deleted_at IS NULL',
+      id,
+    );
+    // Soft-delete links that were unticked, add the newly ticked ones, leave the rest untouched
+    for (const l of links) {
+      if (wanted.has(l.muscle_group_id)) wanted.delete(l.muscle_group_id);
+      else await db.runAsync('UPDATE exercise_muscle_groups SET deleted_at = ?, updated_at = ? WHERE id = ?', t, t, l.id);
+    }
+    for (const groupId of wanted) {
+      await db.runAsync(
+        'INSERT INTO exercise_muscle_groups (id, exercise_id, muscle_group_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+        newId(), id, groupId, t, t,
+      );
+    }
+  });
 }
 
 /** Switch the unit new sets are logged in (kg or level). Existing sets keep their own unit. */
@@ -148,7 +238,7 @@ export async function deleteRoutine(db: SQLiteDatabase, id: string): Promise<voi
 
 export function listRoutineExercises(db: SQLiteDatabase, routineId: string): Promise<RoutineExercise[]> {
   return db.getAllAsync<RoutineExercise>(
-    `SELECT re.id, re.exercise_id, e.name, e.muscle_group, e.load_type, re.position
+    `SELECT re.id, re.exercise_id, e.name, ${MUSCLE_GROUPS_LABEL} AS muscle_groups, e.load_type, re.position
      FROM routine_exercises re
      JOIN exercises e ON e.id = re.exercise_id
      WHERE re.routine_id = ? AND re.deleted_at IS NULL
@@ -404,7 +494,7 @@ export async function previousSets(
 /** Exercises that have at least one logged set, most-trained first. */
 export function listTrainedExercises(db: SQLiteDatabase): Promise<(Exercise & { session_count: number })[]> {
   return db.getAllAsync(
-    `SELECT e.id, e.name, e.muscle_group, e.load_type, COUNT(DISTINCT s.workout_id) AS session_count
+    `SELECT e.id, e.name, ${MUSCLE_GROUPS_LABEL} AS muscle_groups, e.load_type, COUNT(DISTINCT s.workout_id) AS session_count
      FROM exercises e
      JOIN workout_sets s ON s.exercise_id = e.id AND s.deleted_at IS NULL
      JOIN workouts w ON w.id = s.workout_id AND w.deleted_at IS NULL

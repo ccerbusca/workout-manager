@@ -96,6 +96,134 @@ const MIGRATIONS: string[] = [
   UPDATE workout_sets
      SET load_type = COALESCE((SELECT e.load_type FROM exercises e WHERE e.id = workout_sets.exercise_id), 'weight');
   `,
+
+  // v5 — an exercise can belong to several muscle groups, picked from a shared list.
+  //      Existing free-text exercises.muscle_group values become rows (case-insensitively
+  //      de-duplicated) and get linked. The old column stays but is no longer read or written.
+  //      UUIDs are built from randomblob() in v4 format, since SQLite has no uuid function.
+  `
+  CREATE TABLE muscle_groups (
+    id         TEXT PRIMARY KEY NOT NULL,
+    name       TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
+  );
+
+  CREATE TABLE exercise_muscle_groups (
+    id              TEXT PRIMARY KEY NOT NULL,
+    exercise_id     TEXT NOT NULL REFERENCES exercises(id),
+    muscle_group_id TEXT NOT NULL REFERENCES muscle_groups(id),
+    created_at      INTEGER NOT NULL,
+    updated_at      INTEGER NOT NULL,
+    deleted_at      INTEGER
+  );
+  CREATE INDEX idx_exercise_muscle_groups_exercise ON exercise_muscle_groups(exercise_id);
+  CREATE INDEX idx_exercise_muscle_groups_group ON exercise_muscle_groups(muscle_group_id);
+
+  INSERT INTO muscle_groups (id, name, created_at, updated_at)
+  SELECT lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' ||
+         substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) ||
+         substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))),
+         MIN(TRIM(muscle_group)),
+         CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER),
+         CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+  FROM exercises
+  WHERE muscle_group IS NOT NULL AND TRIM(muscle_group) <> ''
+  GROUP BY lower(TRIM(muscle_group));
+
+  INSERT INTO exercise_muscle_groups (id, exercise_id, muscle_group_id, created_at, updated_at)
+  SELECT lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' ||
+         substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) ||
+         substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))),
+         e.id, mg.id,
+         CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER),
+         CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+  FROM exercises e
+  JOIN muscle_groups mg ON lower(mg.name) = lower(TRIM(e.muscle_group));
+  `,
+
+  // v6 — the predefined exercises get specific muscles instead of one broad region
+  //      (e.g. Bench Press: Chest, Shoulders, Triceps instead of Chest). Only exercises the user
+  //      hasn't touched are changed: same name as seeded, not deleted, and still linked to exactly
+  //      their one original group. Groups that end up unused (e.g. "Legs") stay in the list.
+  //      Mirrors DEFAULT_EXERCISES in repo.ts.
+  `
+  CREATE TEMP TABLE _v6_seed (name TEXT NOT NULL, old_group TEXT NOT NULL, new_group TEXT NOT NULL);
+  INSERT INTO _v6_seed (name, old_group, new_group) VALUES
+    ('Bench Press', 'Chest', 'Chest'), ('Bench Press', 'Chest', 'Shoulders'), ('Bench Press', 'Chest', 'Triceps'),
+    ('Incline Dumbbell Press', 'Chest', 'Chest'), ('Incline Dumbbell Press', 'Chest', 'Shoulders'),
+    ('Incline Dumbbell Press', 'Chest', 'Triceps'),
+    ('Overhead Press', 'Shoulders', 'Shoulders'), ('Overhead Press', 'Shoulders', 'Triceps'),
+    ('Lateral Raise', 'Shoulders', 'Shoulders'),
+    ('Squat', 'Legs', 'Quads'), ('Squat', 'Legs', 'Glutes'),
+    ('Romanian Deadlift', 'Legs', 'Hamstrings'), ('Romanian Deadlift', 'Legs', 'Glutes'),
+    ('Romanian Deadlift', 'Legs', 'Lower back'),
+    ('Leg Press', 'Legs', 'Quads'), ('Leg Press', 'Legs', 'Glutes'),
+    ('Deadlift', 'Back', 'Hamstrings'), ('Deadlift', 'Back', 'Glutes'), ('Deadlift', 'Back', 'Lower back'),
+    ('Deadlift', 'Back', 'Upper back'),
+    ('Pull-up', 'Back', 'Lats'), ('Pull-up', 'Back', 'Biceps'),
+    ('Barbell Row', 'Back', 'Upper back'), ('Barbell Row', 'Back', 'Lats'), ('Barbell Row', 'Back', 'Biceps'),
+    ('Lat Pulldown', 'Back', 'Lats'), ('Lat Pulldown', 'Back', 'Biceps'),
+    ('Biceps Curl', 'Arms', 'Biceps'),
+    ('Triceps Pushdown', 'Arms', 'Triceps');
+
+  -- Untouched predefined exercises: one active link, to the original group
+  CREATE TEMP TABLE _v6_targets AS
+  SELECT e.id AS exercise_id, e.name
+  FROM exercises e
+  WHERE e.deleted_at IS NULL
+    AND e.name IN (SELECT name FROM _v6_seed)
+    AND (SELECT COUNT(*) FROM exercise_muscle_groups emg
+         WHERE emg.exercise_id = e.id AND emg.deleted_at IS NULL) = 1
+    AND EXISTS (SELECT 1 FROM exercise_muscle_groups emg
+                JOIN muscle_groups mg ON mg.id = emg.muscle_group_id
+                WHERE emg.exercise_id = e.id AND emg.deleted_at IS NULL
+                  AND lower(mg.name) = lower((SELECT old_group FROM _v6_seed s WHERE s.name = e.name LIMIT 1)));
+
+  -- Add the groups those exercises need, if the list doesn't have them yet (any case)
+  INSERT INTO muscle_groups (id, name, created_at, updated_at)
+  SELECT lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' ||
+         substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) ||
+         substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))),
+         s.new_group,
+         CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER),
+         CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+  FROM (SELECT DISTINCT s.new_group FROM _v6_seed s JOIN _v6_targets t ON t.name = s.name) s
+  WHERE NOT EXISTS (SELECT 1 FROM muscle_groups mg
+                    WHERE lower(mg.name) = lower(s.new_group) AND mg.deleted_at IS NULL);
+
+  -- Soft-delete links that aren't in the new set (e.g. Squat -> Legs); keep ones that are (Lateral Raise)
+  UPDATE exercise_muscle_groups
+     SET deleted_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER),
+         updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+   WHERE deleted_at IS NULL
+     AND exercise_id IN (SELECT exercise_id FROM _v6_targets)
+     AND NOT EXISTS (
+       SELECT 1 FROM _v6_targets t
+       JOIN _v6_seed s ON s.name = t.name
+       JOIN muscle_groups mg ON lower(mg.name) = lower(s.new_group) AND mg.deleted_at IS NULL
+       WHERE t.exercise_id = exercise_muscle_groups.exercise_id
+         AND mg.id = exercise_muscle_groups.muscle_group_id);
+
+  -- Link the new groups that aren't linked yet
+  INSERT INTO exercise_muscle_groups (id, exercise_id, muscle_group_id, created_at, updated_at)
+  SELECT lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' ||
+         substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) ||
+         substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))),
+         t.exercise_id, mg.id,
+         CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER),
+         CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+  FROM _v6_targets t
+  JOIN _v6_seed s ON s.name = t.name
+  JOIN muscle_groups mg ON lower(mg.name) = lower(s.new_group) AND mg.deleted_at IS NULL
+  WHERE NOT EXISTS (SELECT 1 FROM exercise_muscle_groups emg
+                    WHERE emg.exercise_id = t.exercise_id AND emg.muscle_group_id = mg.id
+                      AND emg.deleted_at IS NULL);
+
+  DROP TABLE _v6_targets;
+  DROP TABLE _v6_seed;
+  `,
 ];
 
 export async function migrate(db: SQLiteDatabase): Promise<void> {
