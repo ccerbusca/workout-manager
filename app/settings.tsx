@@ -127,7 +127,8 @@ export default function SettingsScreen() {
         />
       </View>
       <Text style={[font.small, { marginTop: space.sm }]}>
-        Your data lives only on this phone, and uninstalling the app deletes it. Export now and then to keep a copy.
+        Your workouts are stored only on this phone, and uninstalling the app deletes them. Export a backup regularly
+        (for example once a week) and save it to Drive or another safe place.
       </Text>
 
       <Text style={[font.small, { textAlign: 'center', marginTop: space.xl * 2 }]}>
