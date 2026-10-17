@@ -7,3 +7,7 @@ ios/
 *.log
 .DS_Store
 expo-env.d.ts
+
+# Local AI context (Claude Code handover notes), not part of the repo
+CLAUDE.md
+context/

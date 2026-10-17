@@ -87,6 +87,11 @@ export async function updateExercise(
   );
 }
 
+/** Switch the unit new sets are logged in (kg or level). Existing sets keep their own unit. */
+export async function setExerciseLoadType(db: SQLiteDatabase, id: string, loadType: LoadType): Promise<void> {
+  await db.runAsync('UPDATE exercises SET load_type = ?, updated_at = ? WHERE id = ?', loadType, now(), id);
+}
+
 /** Soft delete: logged history keeps pointing at the exercise. */
 export async function deleteExercise(db: SQLiteDatabase, id: string): Promise<void> {
   const t = now();
@@ -262,10 +267,9 @@ export function listWorkoutHistory(db: SQLiteDatabase, limit = 50): Promise<Work
     `SELECT w.id, w.routine_id, w.routine_name, w.started_at, w.ended_at, w.notes,
             COUNT(s.id)                      AS set_count,
             COUNT(DISTINCT s.exercise_id)    AS exercise_count,
-            COALESCE(SUM(CASE WHEN e.load_type = 'weight' THEN s.weight * s.reps ELSE 0 END), 0) AS volume
+            COALESCE(SUM(CASE WHEN s.load_type = 'weight' THEN s.weight * s.reps ELSE 0 END), 0) AS volume
      FROM workouts w
      LEFT JOIN workout_sets s ON s.workout_id = w.id AND s.deleted_at IS NULL
-     LEFT JOIN exercises e ON e.id = s.exercise_id
      WHERE w.deleted_at IS NULL AND w.ended_at IS NOT NULL
      GROUP BY w.id
      ORDER BY w.started_at DESC
@@ -314,7 +318,7 @@ export async function addExerciseToWorkout(
 
 export function listSets(db: SQLiteDatabase, workoutId: string, exerciseId: string): Promise<WorkoutSet[]> {
   return db.getAllAsync<WorkoutSet>(
-    `SELECT id, workout_id, exercise_id, set_index, weight, reps, created_at FROM workout_sets
+    `SELECT id, workout_id, exercise_id, set_index, weight, reps, load_type, created_at FROM workout_sets
      WHERE workout_id = ? AND exercise_id = ? AND deleted_at IS NULL
      ORDER BY set_index`,
     workoutId, exerciseId,
@@ -323,7 +327,7 @@ export function listSets(db: SQLiteDatabase, workoutId: string, exerciseId: stri
 
 export function listAllSetsForWorkout(db: SQLiteDatabase, workoutId: string): Promise<(WorkoutSet & { name: string; load_type: LoadType })[]> {
   return db.getAllAsync(
-    `SELECT s.id, s.workout_id, s.exercise_id, s.set_index, s.weight, s.reps, s.created_at, e.name, e.load_type
+    `SELECT s.id, s.workout_id, s.exercise_id, s.set_index, s.weight, s.reps, s.load_type, s.created_at, e.name
      FROM workout_sets s JOIN exercises e ON e.id = s.exercise_id
      WHERE s.workout_id = ? AND s.deleted_at IS NULL
      ORDER BY s.created_at`,
@@ -344,9 +348,11 @@ export async function addSet(
   );
   const t = now();
   await db.runAsync(
-    `INSERT INTO workout_sets (id, workout_id, exercise_id, set_index, weight, reps, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    newId(), workoutId, exerciseId, (row?.i ?? 0) + 1, weight, reps, t, t,
+    `INSERT INTO workout_sets (id, workout_id, exercise_id, set_index, weight, reps, load_type, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?,
+             COALESCE((SELECT load_type FROM exercises WHERE id = ?), 'weight'),
+             ?, ?)`,
+    newId(), workoutId, exerciseId, (row?.i ?? 0) + 1, weight, reps, exerciseId, t, t,
   );
 }
 
@@ -398,7 +404,11 @@ export function listTrainedExercises(db: SQLiteDatabase): Promise<(Exercise & { 
  * Per-workout aggregates for one exercise, oldest first.
  * best_e1rm uses the Epley formula: weight × (1 + reps / 30).
  */
-export function exerciseStats(db: SQLiteDatabase, exerciseId: string): Promise<ExerciseSessionStats[]> {
+export function exerciseStats(
+  db: SQLiteDatabase,
+  exerciseId: string,
+  loadType: LoadType,
+): Promise<ExerciseSessionStats[]> {
   return db.getAllAsync<ExerciseSessionStats>(
     `SELECT w.id AS workout_id, w.started_at,
             MAX(s.weight)                                         AS top_weight,
@@ -409,9 +419,20 @@ export function exerciseStats(db: SQLiteDatabase, exerciseId: string): Promise<E
             COUNT(*)                                              AS set_count
      FROM workout_sets s
      JOIN workouts w ON w.id = s.workout_id
-     WHERE s.exercise_id = ? AND s.deleted_at IS NULL AND w.deleted_at IS NULL
+     WHERE s.exercise_id = ? AND s.load_type = ? AND s.deleted_at IS NULL AND w.deleted_at IS NULL
      GROUP BY w.id
      ORDER BY w.started_at`,
+    exerciseId, loadType,
+  );
+}
+
+/** The units this exercise has sets logged in (e.g. both, after switching gyms). */
+export async function listLoggedUnits(db: SQLiteDatabase, exerciseId: string): Promise<LoadType[]> {
+  const rows = await db.getAllAsync<{ load_type: LoadType }>(
+    `SELECT DISTINCT s.load_type
+     FROM workout_sets s JOIN workouts w ON w.id = s.workout_id
+     WHERE s.exercise_id = ? AND s.deleted_at IS NULL AND w.deleted_at IS NULL`,
     exerciseId,
   );
+  return rows.map((r) => r.load_type);
 }

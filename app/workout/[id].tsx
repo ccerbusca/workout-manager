@@ -1,5 +1,14 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  useWindowDimensions,
+  View,
+  type GestureResponderEvent,
+} from 'react-native';
 import { Dialog } from '../../src/components/Dialog';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
@@ -14,8 +23,10 @@ import {
   listSets,
   listWorkoutExercises,
   previousSets,
+  setExerciseLoadType,
   updateSet,
 } from '../../src/db/repo';
+import { UnitMenu, unitMenuHitTest, type UnitMenuState } from '../../src/components/UnitMenu';
 import type { LoadType, Workout, WorkoutExercise, WorkoutSet } from '../../src/db/types';
 import { ExercisePicker } from '../../src/components/ExercisePicker';
 import { Button, Card, Empty, Loading, SectionTitle, Stepper } from '../../src/components/ui';
@@ -63,6 +74,16 @@ function ActiveWorkout({ workout, onFinished }: { workout: Workout; onFinished: 
   const [editingSetId, setEditingSetId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [, setTick] = useState(0);
+  // Long-press kg/level menu. `origin` is the root view's page position, for placing the overlay.
+  const [unitMenu, setUnitMenu] = useState<(UnitMenuState & { exerciseId: string }) | null>(null);
+  const [unitHover, setUnitHover] = useState<LoadType | null>(null);
+  const rootRef = useRef<View>(null);
+  const chipRefs = useRef(new Map<string, View>());
+  const [origin, setOrigin] = useState({ x: 0, y: 0 });
+  const { width: screenWidth } = useWindowDimensions();
+
+  const selected = exercises.find((e) => e.exercise_id === selectedId);
+  const loadType: LoadType = selected?.load_type ?? 'weight';
 
   // Re-render every 30 s so the elapsed time stays fresh
   useEffect(() => {
@@ -83,7 +104,7 @@ function ActiveWorkout({ workout, onFinished }: { workout: Workout; onFinished: 
     });
   }, [loadExercises]);
 
-  // When the selected exercise changes, load its sets + last session, and prefill inputs
+  // When the selected exercise (or its unit) changes, load its sets + last session, and prefill inputs
   useEffect(() => {
     if (!selectedId) return;
     let cancelled = false;
@@ -101,11 +122,14 @@ function ActiveWorkout({ workout, onFinished }: { workout: Workout; onFinished: 
     return () => {
       cancelled = true;
     };
-  }, [db, workout.id, selectedId]);
+  }, [db, workout.id, selectedId, loadType]);
 
   /** Suggest the next set: repeat the last one done today, else match last session's equivalent set. */
   const prefill = (current: WorkoutSet[], last: WorkoutSet[]) => {
-    const ref = current[current.length - 1] ?? last[current.length] ?? last[last.length - 1];
+    // Only suggest from sets in the exercise's current unit (kg vs level)
+    const cur = current.filter((s) => s.load_type === loadType);
+    const prevSame = last.filter((s) => s.load_type === loadType);
+    const ref = cur[cur.length - 1] ?? prevSame[cur.length] ?? prevSame[prevSame.length - 1];
     setWeight(ref ? formatWeight(ref.weight) : '');
     setReps(ref ? String(ref.reps) : '');
   };
@@ -148,7 +172,7 @@ function ActiveWorkout({ workout, onFinished }: { workout: Workout; onFinished: 
   };
 
   const onSetLongPress = (s: WorkoutSet) => {
-    Dialog.alert(`Delete set ${s.set_index}?`, `${formatLoad(s.weight, loadType)} × ${s.reps}`, [
+    Dialog.alert(`Delete set ${s.set_index}?`, `${formatLoad(s.weight, s.load_type)} × ${s.reps}`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
@@ -189,153 +213,216 @@ function ActiveWorkout({ workout, onFinished }: { workout: Workout; onFinished: 
     ]);
   };
 
-  const selected = exercises.find((e) => e.exercise_id === selectedId);
-  const loadType: LoadType = selected?.load_type ?? 'weight';
+  const openUnitMenu = (exerciseId: string, current: LoadType, e: GestureResponderEvent) => {
+    setSelectedId(exerciseId);
+    setUnitHover(null);
+    const pageX = e.nativeEvent.pageX;
+    // Open the menu just below the pressed chip, measured in the same page coordinates as touches
+    chipRefs.current.get(exerciseId)?.measure((_x, _y, _w, h, _px, pageY) =>
+      setUnitMenu({ exerciseId, current, x: pageX, y: pageY + h }),
+    );
+  };
+
+  const pickUnit = async (lt: LoadType) => {
+    const menu = unitMenu;
+    setUnitMenu(null);
+    setUnitHover(null);
+    if (!menu || lt === menu.current) return;
+    await setExerciseLoadType(db, menu.exerciseId, lt);
+    await loadExercises(); // the new unit re-runs the load/prefill effect
+  };
+
+  // The long-press touch is still down when the menu opens: follow it so the user can slide onto an option
+  const onChipsTouchMove = (e: GestureResponderEvent) => {
+    if (!unitMenu) return;
+    const hit = unitMenuHitTest(unitMenu, screenWidth, e.nativeEvent.pageX, e.nativeEvent.pageY);
+    if (hit !== unitHover) setUnitHover(hit);
+  };
+  const onChipsTouchEnd = () => {
+    if (unitMenu && unitHover) pickUnit(unitHover);
+  };
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Stack.Screen
-        options={{
-          title: workout.routine_name ?? 'Free workout',
-          headerRight: () => <Button title="Finish" variant="ghost" onPress={finish} />,
-        }}
-      />
-      <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }} keyboardShouldPersistTaps="handled">
-        <Text style={font.dim}>
-          Started {formatTime(workout.started_at)} · {formatDuration(workout.started_at, Date.now())}
-        </Text>
+      <View
+        ref={rootRef}
+        style={{ flex: 1 }}
+        onLayout={() => rootRef.current?.measure((_x, _y, _w, _h, pageX, pageY) => setOrigin({ x: pageX, y: pageY }))}
+      >
+        <Stack.Screen
+          options={{
+            title: workout.routine_name ?? 'Free workout',
+            headerRight: () => <Button title="Finish" variant="ghost" onPress={finish} />,
+          }}
+        />
+        <ScrollView
+          contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }}
+          keyboardShouldPersistTaps="handled"
+          scrollEnabled={!unitMenu} // otherwise sliding to an option scrolls the page and cancels the touch
+        >
+          <Text style={font.dim}>
+            Started {formatTime(workout.started_at)} · {formatDuration(workout.started_at, Date.now())}
+          </Text>
 
-        {/* Exercise chooser */}
-        <SectionTitle>Exercise</SectionTitle>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
-          {exercises.map((e) => {
-            const isSel = e.exercise_id === selectedId;
-            return (
-              <Pressable
-                key={e.id}
-                onPress={() => setSelectedId(e.exercise_id)}
-                style={{
-                  paddingHorizontal: space.md,
-                  paddingVertical: 10,
-                  borderRadius: radius.lg,
-                  borderWidth: 1,
-                  borderColor: isSel ? colors.accent : colors.border,
-                  backgroundColor: isSel ? colors.accent : e.set_count > 0 ? colors.surfaceAlt : colors.surface,
-                }}
-              >
-                <Text style={{ color: isSel ? colors.accentText : colors.text, fontWeight: '600' }}>
-                  {e.name}
-                  {e.set_count > 0 ? `  ✓${e.set_count}` : ''}
-                </Text>
-              </Pressable>
-            );
-          })}
-          <Pressable
-            onPress={() => setPickerOpen(true)}
-            style={{
-              paddingHorizontal: space.md,
-              paddingVertical: 10,
-              borderRadius: radius.lg,
-              borderWidth: 1,
-              borderStyle: 'dashed',
-              borderColor: colors.textFaint,
-            }}
+          {/* Exercise chooser */}
+          <SectionTitle>Exercise</SectionTitle>
+          <View
+            style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}
+            onTouchMove={onChipsTouchMove}
+            onTouchEnd={onChipsTouchEnd}
           >
-            <Text style={{ color: colors.textDim, fontWeight: '600' }}>+ Add</Text>
-          </Pressable>
-        </View>
+            {exercises.map((e) => {
+              const isSel = e.exercise_id === selectedId;
+              return (
+                <Pressable
+                  key={e.id}
+                  onPress={() => setSelectedId(e.exercise_id)}
+                  ref={(v) => {
+                    if (v) chipRefs.current.set(e.exercise_id, v);
+                    else chipRefs.current.delete(e.exercise_id);
+                  }}
+                  onLongPress={(ev) => openUnitMenu(e.exercise_id, e.load_type, ev)}
+                  style={{
+                    paddingHorizontal: space.md,
+                    paddingVertical: 10,
+                    borderRadius: radius.lg,
+                    borderWidth: 1,
+                    borderColor: isSel ? colors.accent : colors.border,
+                    backgroundColor: isSel ? colors.accent : e.set_count > 0 ? colors.surfaceAlt : colors.surface,
+                  }}
+                >
+                  <Text style={{ color: isSel ? colors.accentText : colors.text, fontWeight: '600' }}>
+                    {e.name}
+                    {e.load_type === 'level' ? '  · L' : ''}
+                    {e.set_count > 0 ? `  ✓${e.set_count}` : ''}
+                  </Text>
+                </Pressable>
+              );
+            })}
+            <Pressable
+              onPress={() => setPickerOpen(true)}
+              style={{
+                paddingHorizontal: space.md,
+                paddingVertical: 10,
+                borderRadius: radius.lg,
+                borderWidth: 1,
+                borderStyle: 'dashed',
+                borderColor: colors.textFaint,
+              }}
+            >
+              <Text style={{ color: colors.textDim, fontWeight: '600' }}>+ Add</Text>
+            </Pressable>
+          </View>
+          {exercises.length > 0 ? (
+            <Text style={[font.small, { marginTop: space.xs }]}>Long-press an exercise to switch kg / level</Text>
+          ) : null}
 
-        {!selected ? (
-          <Empty title="Add an exercise to start logging" />
-        ) : (
-          <>
-            {/* Previous session */}
-            <SectionTitle>Last time</SectionTitle>
-            {prev ? (
-              <Text style={font.dim}>
-                {formatDate(prev.started_at)}:{'  '}
-                <Text style={{ color: colors.text }}>
-                  {prev.sets.map((s) => formatSetShort(s.weight, s.reps, loadType)).join('   ')}
+          {!selected ? (
+            <Empty title="Add an exercise to start logging" />
+          ) : (
+            <>
+              {/* Previous session */}
+              <SectionTitle>Last time</SectionTitle>
+              {prev ? (
+                <Text style={font.dim}>
+                  {formatDate(prev.started_at)}:{'  '}
+                  <Text style={{ color: colors.text }}>
+                    {prev.sets.map((s) => formatSetShort(s.weight, s.reps, s.load_type)).join('   ')}
+                  </Text>
                 </Text>
-              </Text>
-            ) : (
-              <Text style={font.small}>First time logging {selected.name}.</Text>
-            )}
+              ) : (
+                <Text style={font.small}>First time logging {selected.name}.</Text>
+              )}
 
-            {/* Logged sets */}
-            <SectionTitle>Today</SectionTitle>
-            {sets.length === 0 ? (
-              <Text style={font.small}>No sets yet.</Text>
-            ) : (
-              <View style={{ gap: space.xs }}>
-                {sets.map((s) => {
-                  const isEditing = editingSetId === s.id;
-                  return (
-                    <Pressable
-                      key={s.id}
-                      onPress={() => onSetPress(s)}
-                      onLongPress={() => onSetLongPress(s)}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        paddingVertical: 10,
-                        paddingHorizontal: space.md,
-                        borderRadius: radius.md,
-                        backgroundColor: isEditing ? colors.surfaceAlt : colors.surface,
-                        borderWidth: 1,
-                        borderColor: isEditing ? colors.accent : colors.border,
-                      }}
-                    >
-                      <Text style={[font.dim, { width: 56 }]}>Set {s.set_index}</Text>
-                      <Text style={[font.body, { flex: 1, fontWeight: '700', fontVariant: ['tabular-nums'] }]}>
-                        {formatLoad(s.weight, loadType)} × {s.reps}
-                      </Text>
-                      <Text style={font.small}>{isEditing ? 'editing' : formatTime(s.created_at)}</Text>
-                    </Pressable>
-                  );
-                })}
-                <Text style={[font.small, { marginTop: space.xs }]}>Tap a set to edit · long-press to delete</Text>
-              </View>
-            )}
+              {/* Logged sets */}
+              <SectionTitle>Today</SectionTitle>
+              {sets.length === 0 ? (
+                <Text style={font.small}>No sets yet.</Text>
+              ) : (
+                <View style={{ gap: space.xs }}>
+                  {sets.map((s) => {
+                    const isEditing = editingSetId === s.id;
+                    return (
+                      <Pressable
+                        key={s.id}
+                        onPress={() => onSetPress(s)}
+                        onLongPress={() => onSetLongPress(s)}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          paddingVertical: 10,
+                          paddingHorizontal: space.md,
+                          borderRadius: radius.md,
+                          backgroundColor: isEditing ? colors.surfaceAlt : colors.surface,
+                          borderWidth: 1,
+                          borderColor: isEditing ? colors.accent : colors.border,
+                        }}
+                      >
+                        <Text style={[font.dim, { width: 56 }]}>Set {s.set_index}</Text>
+                        <Text style={[font.body, { flex: 1, fontWeight: '700', fontVariant: ['tabular-nums'] }]}>
+                          {formatLoad(s.weight, s.load_type)} × {s.reps}
+                        </Text>
+                        <Text style={font.small}>{isEditing ? 'editing' : formatTime(s.created_at)}</Text>
+                      </Pressable>
+                    );
+                  })}
+                  <Text style={[font.small, { marginTop: space.xs }]}>Tap a set to edit · long-press to delete</Text>
+                </View>
+              )}
 
-            {/* Input */}
-            <Card style={{ marginTop: space.lg, gap: space.md }}>
-              <View style={{ flexDirection: 'row', gap: space.md }}>
-                <Stepper
-                  label={loadType === 'level' ? 'level' : 'kg'}
-                  value={weight}
-                  onChange={setWeight}
-                  step={loadType === 'level' ? 1 : 2.5}
-                  decimal={loadType !== 'level'}
+              {/* Input */}
+              <Card style={{ marginTop: space.lg, gap: space.md }}>
+                <View style={{ flexDirection: 'row', gap: space.md }}>
+                  <Stepper
+                    label={loadType === 'level' ? 'level' : 'kg'}
+                    value={weight}
+                    onChange={setWeight}
+                    step={loadType === 'level' ? 1 : 2.5}
+                    decimal={loadType !== 'level'}
+                  />
+                  <Stepper label="reps" value={reps} onChange={setReps} step={1} />
+                </View>
+                <Button
+                  title={editingSetId ? 'Update set' : `Log set ${sets.length + 1}`}
+                  big
+                  onPress={logSet}
                 />
-                <Stepper label="reps" value={reps} onChange={setReps} step={1} />
-              </View>
-              <Button
-                title={editingSetId ? 'Update set' : `Log set ${sets.length + 1}`}
-                big
-                onPress={logSet}
-              />
-            </Card>
-          </>
-        )}
+              </Card>
+            </>
+          )}
 
-        <View style={{ gap: space.sm, marginTop: space.xl }}>
-          <Button title="Finish workout" variant="secondary" onPress={finish} />
-          <Button title="Discard workout" variant="ghost" onPress={discard} />
-        </View>
-      </ScrollView>
+          <View style={{ gap: space.sm, marginTop: space.xl }}>
+            <Button title="Finish workout" variant="secondary" onPress={finish} />
+            <Button title="Discard workout" variant="ghost" onPress={discard} />
+          </View>
+        </ScrollView>
 
-      <ExercisePicker
-        visible={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        excludeIds={exercises.map((e) => e.exercise_id)}
-        onPick={async (e) => {
-          setPickerOpen(false);
-          await addExerciseToWorkout(db, workout.id, e.id);
-          await loadExercises();
-          setSelectedId(e.id);
-        }}
-      />
+        <ExercisePicker
+          visible={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          excludeIds={exercises.map((e) => e.exercise_id)}
+          onPick={async (e) => {
+            setPickerOpen(false);
+            await addExerciseToWorkout(db, workout.id, e.id);
+            await loadExercises();
+            setSelectedId(e.id);
+          }}
+        />
+
+        {unitMenu ? (
+          <UnitMenu
+            menu={unitMenu}
+            origin={origin}
+            screenWidth={screenWidth}
+            hover={unitHover}
+            onPick={pickUnit}
+            onClose={() => {
+              setUnitMenu(null);
+              setUnitHover(null);
+            }}
+          />
+        ) : null}
+      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -396,7 +483,7 @@ function WorkoutSummaryView({ workout }: { workout: Workout }) {
                 <View key={s.id} style={{ flexDirection: 'row' }}>
                   <Text style={[font.dim, { width: 56 }]}>Set {s.set_index}</Text>
                   <Text style={[font.body, { fontVariant: ['tabular-nums'] }]}>
-                    {formatLoad(s.weight, g.load_type)} × {s.reps}
+                    {formatLoad(s.weight, s.load_type)} × {s.reps}
                   </Text>
                 </View>
               ))}

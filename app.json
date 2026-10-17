@@ -23,6 +23,12 @@
       "expo-sqlite",
       "expo-status-bar"
     ],
-    "icon": "./assets/icon.png"
+    "icon": "./assets/icon.png",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "41d6ca96-674c-4c5c-a4d4-dd90e6fbe200"
+      }
+    }
   }
 }

@@ -2,10 +2,10 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { exerciseStats, listTrainedExercises, listWorkoutHistory } from '../../src/db/repo';
-import type { Exercise, ExerciseSessionStats, WorkoutSummary } from '../../src/db/types';
+import { exerciseStats, listLoggedUnits, listTrainedExercises, listWorkoutHistory } from '../../src/db/repo';
+import type { Exercise, ExerciseSessionStats, LoadType, WorkoutSummary } from '../../src/db/types';
 import { LineChart, type ChartPoint } from '../../src/components/LineChart';
-import { Card, Empty, SectionTitle } from '../../src/components/ui';
+import { Card, Empty, SectionTitle, Segmented } from '../../src/components/ui';
 import { formatDate, formatLoad, formatShortDate, formatVolume } from '../../src/lib/format';
 import { colors, font, radius, space } from '../../src/theme';
 
@@ -29,6 +29,9 @@ export default function ProgressScreen() {
   const [stats, setStats] = useState<ExerciseSessionStats[]>([]);
   const [metric, setMetric] = useState<Metric>('e1rm');
   const [history, setHistory] = useState<WorkoutSummary[]>([]);
+  // Units this exercise has sets in, and which one the chart shows
+  const [units, setUnits] = useState<LoadType[]>([]);
+  const [loadType, setLoadType] = useState<LoadType>('weight');
 
   useFocusEffect(
     useCallback(() => {
@@ -41,13 +44,25 @@ export default function ProgressScreen() {
     }, [db]),
   );
 
+  // Start on the exercise's current unit if it has sets in it, otherwise the unit it does have
   useEffect(() => {
-    if (selectedId) exerciseStats(db, selectedId).then(setStats);
-    else setStats([]);
-  }, [db, selectedId, history]);
+    const current = exercises.find((e) => e.id === selectedId)?.load_type ?? 'weight';
+    if (selectedId) {
+      listLoggedUnits(db, selectedId).then((logged) => {
+        setUnits(logged);
+        setLoadType(logged.includes(current) || logged.length === 0 ? current : logged[0]);
+      });
+    } else {
+      setUnits([]);
+    }
+  }, [db, selectedId, history, exercises]);
 
-  const selectedExercise = exercises.find((e) => e.id === selectedId);
-  const loadType = selectedExercise?.load_type ?? 'weight';
+  // Chart only the sets logged in one unit at a time, so kg and levels never mix
+  useEffect(() => {
+    if (selectedId) exerciseStats(db, selectedId, loadType).then(setStats);
+    else setStats([]);
+  }, [db, selectedId, loadType, history]);
+
   const metrics = loadType === 'level' ? LEVEL_METRICS : WEIGHT_METRICS;
   const m = metrics.find((x) => x.key === metric) ?? metrics[0];
   const points: ChartPoint[] = stats.map((s) => ({
@@ -73,6 +88,16 @@ export default function ProgressScreen() {
       </ScrollView>
 
       <Card style={{ marginTop: space.md, gap: space.md }}>
+        {units.length > 1 ? (
+          <Segmented
+            options={[
+              { value: 'weight', label: 'Weight (kg)' },
+              { value: 'level', label: 'Machine level' },
+            ]}
+            value={loadType}
+            onChange={setLoadType}
+          />
+        ) : null}
         <View style={{ flexDirection: 'row', gap: space.xs }}>
           {metrics.map((x) => (
             <Pressable
@@ -96,7 +121,7 @@ export default function ProgressScreen() {
         <Text style={font.small}>{m.help}</Text>
       </Card>
 
-      <SectionTitle>Sessions</SectionTitle>
+      <SectionTitle>{units.length > 1 ? `Sessions (${loadType === 'level' ? 'levels' : 'kg'})` : 'Sessions'}</SectionTitle>
       <View style={{ gap: space.xs }}>
         {[...stats].reverse().map((s) => (
           <Pressable

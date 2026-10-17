@@ -54,6 +54,8 @@ export interface WorkoutSet {
   set_index: number;
   weight: number;
   reps: number;
+  /** Unit this set was logged in (copied from the exercise at logging time). */
+  load_type: LoadType;
   created_at: number;
 }
 

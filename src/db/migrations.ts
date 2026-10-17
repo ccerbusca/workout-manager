@@ -88,6 +88,14 @@ const MIGRATIONS: string[] = [
 
   // v3 — renamed 'tier' to 'level' (the common term for machine settings)
   `UPDATE exercises SET load_type = 'level' WHERE load_type = 'tier';`,
+
+  // v4 — each set remembers its own unit, so switching an exercise kg <-> level
+  //      only affects new sets; existing sets take their exercise's current unit
+  `
+  ALTER TABLE workout_sets ADD COLUMN load_type TEXT NOT NULL DEFAULT 'weight';
+  UPDATE workout_sets
+     SET load_type = COALESCE((SELECT e.load_type FROM exercises e WHERE e.id = workout_sets.exercise_id), 'weight');
+  `,
 ];
 
 export async function migrate(db: SQLiteDatabase): Promise<void> {
