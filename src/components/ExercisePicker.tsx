@@ -3,7 +3,7 @@ import { FlatList, Modal, Platform, Pressable, Text, View } from 'react-native';
 import { useSQLiteContext } from 'expo-sqlite';
 import { createExercise, listExercises } from '../db/repo';
 import type { Exercise } from '../db/types';
-import { colors, font, space } from '../theme';
+import { space, useTheme } from '../theme';
 import { Button, Field } from './ui';
 
 /** Full-screen modal to search and pick an exercise, or create a new one on the fly. */
@@ -13,6 +13,7 @@ export function ExercisePicker(props: {
   onPick: (exercise: Exercise) => void;
   excludeIds?: string[];
 }) {
+  const { colors, font } = useTheme();
   const db = useSQLiteContext();
   const [all, setAll] = useState<Exercise[]>([]);
   const [query, setQuery] = useState('');

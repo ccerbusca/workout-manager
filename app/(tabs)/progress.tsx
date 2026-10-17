@@ -15,7 +15,7 @@ import { ExerciseDropdown } from '../../src/components/ExerciseDropdown';
 import { LineChart, type ChartPoint } from '../../src/components/LineChart';
 import { Button, Card, Empty, SectionTitle, Segmented } from '../../src/components/ui';
 import { formatDate, formatLoad, formatShortDate, formatVolume } from '../../src/lib/format';
-import { colors, font, radius, space } from '../../src/theme';
+import { radius, space, useTheme } from '../../src/theme';
 
 type Metric = 'e1rm' | 'top' | 'volume' | 'reps';
 
@@ -34,6 +34,7 @@ const LEVEL_METRICS: typeof WEIGHT_METRICS = [
 const PREVIEW = 5;
 
 export default function ProgressScreen() {
+  const { colors, font } = useTheme();
   const db = useSQLiteContext();
   const [exercises, setExercises] = useState<TrainedExercise[]>([]);
   const [groupsByExercise, setGroupsByExercise] = useState(new Map<string, string[]>());

@@ -2,7 +2,7 @@ import React from 'react';
 import { router, Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, type ColorValue } from 'react-native';
-import { colors } from '../../src/theme';
+import { useTheme } from '../../src/theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -12,6 +12,7 @@ const icon =
 
 /** Settings entry: a plain dim gear, same colour as the inactive tab icons, so it doesn't compete with the content. */
 function SettingsButton() {
+  const { colors } = useTheme();
   return (
     <Pressable
       onPress={() => router.push('/settings')}
@@ -25,6 +26,7 @@ function SettingsButton() {
 }
 
 export default function TabsLayout() {
+  const { colors } = useTheme();
   return (
     <Tabs
       screenOptions={{

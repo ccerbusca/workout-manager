@@ -16,11 +16,12 @@ import {
 import type { Exercise, MuscleGroup } from '../../src/db/types';
 import { MuscleGroupSelect } from '../../src/components/MuscleGroupSelect';
 import { Button, Card, Field, SectionTitle } from '../../src/components/ui';
-import { font, space } from '../../src/theme';
+import { space, useTheme } from '../../src/theme';
 
 const OTHER = 'Other';
 
 export default function ExercisesScreen() {
+  const { font } = useTheme();
   const db = useSQLiteContext();
   const [items, setItems] = useState<Exercise[]>([]);
   const [muscleGroups, setMuscleGroups] = useState<MuscleGroup[]>([]);

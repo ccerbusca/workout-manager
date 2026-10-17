@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { colors, font, radius, space } from '../theme';
+import { radius, space, useTheme } from '../theme';
 
 /** Local midnight of the given time. Days are compared by this value. */
 export function startOfDay(ms: number): number {
@@ -15,6 +15,7 @@ const WEEKDAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
  * Days after `max` are disabled, so you can't log a workout in the future.
  */
 export function Calendar(props: { value: number; onChange: (day: number) => void; max?: number }) {
+  const { colors, font } = useTheme();
   const selected = new Date(props.value);
   const [month, setMonth] = useState({ y: selected.getFullYear(), m: selected.getMonth() });
   const max = props.max ?? Infinity;
@@ -97,6 +98,7 @@ export function Calendar(props: { value: number; onChange: (day: number) => void
 }
 
 function NavButton(props: { label: string; onPress: () => void; disabled?: boolean }) {
+  const { colors } = useTheme();
   return (
     <Pressable
       onPress={props.onPress}

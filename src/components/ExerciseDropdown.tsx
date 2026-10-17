@@ -3,7 +3,7 @@ import { FlatList, Modal, Pressable, ScrollView, Text, TextInput, useWindowDimen
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { TrainedExercise } from '../db/types';
 import { formatDayMonth } from '../lib/format';
-import { colors, font, radius, space } from '../theme';
+import { radius, space, useTheme } from '../theme';
 
 /**
  * Exercise selector for the Progress tab: a card showing the current exercise that drops a panel
@@ -20,6 +20,7 @@ export function ExerciseDropdown(props: {
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
+  const { colors, font } = useTheme();
   const anchorRef = useRef<View>(null);
   const [anchor, setAnchor] = useState<{ y: number; h: number } | null>(null);
   const [query, setQuery] = useState('');
@@ -110,7 +111,7 @@ export function ExerciseDropdown(props: {
         navigationBarTranslucent
         onRequestClose={close}
       >
-        <Pressable onPress={close} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} />
+        <Pressable onPress={close} style={{ flex: 1, backgroundColor: colors.backdrop }} />
         <View
           style={{
             position: 'absolute',
@@ -202,6 +203,7 @@ export function ExerciseDropdown(props: {
 }
 
 function FilterChip(props: { label: string; active: boolean; onPress: () => void }) {
+  const { colors } = useTheme();
   return (
     <Pressable
       onPress={props.onPress}

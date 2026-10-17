@@ -1,10 +1,10 @@
-import React from 'react';
-import { Stack } from 'expo-router';
+import React, { useMemo } from 'react';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider as NavigationThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SQLiteProvider, type SQLiteDatabase } from 'expo-sqlite';
 import { migrate } from '../src/db/migrations';
 import { seedIfEmpty } from '../src/db/repo';
-import { colors } from '../src/theme';
+import { ThemeProvider, useTheme } from '../src/theme';
 import { DialogHost } from '../src/components/Dialog';
 
 async function initDb(db: SQLiteDatabase) {
@@ -14,8 +14,37 @@ async function initDb(db: SQLiteDatabase) {
 
 export default function RootLayout() {
   return (
-    <SQLiteProvider databaseName="workouts.db" onInit={initDb}>
-      <StatusBar style="light" />
+    <ThemeProvider>
+      <SQLiteProvider databaseName="workouts.db" onInit={initDb}>
+        <ThemedApp />
+      </SQLiteProvider>
+    </ThemeProvider>
+  );
+}
+
+/** Everything that reads the theme has to sit inside <ThemeProvider>, so it lives here. */
+function ThemedApp() {
+  const { colors, dark } = useTheme();
+  // React Navigation keeps its own colours (screen background during transitions, etc.)
+  const navigationTheme = useMemo(() => {
+    const base = dark ? DarkTheme : DefaultTheme;
+    return {
+      ...base,
+      colors: {
+        ...base.colors,
+        primary: colors.accent,
+        background: colors.bg,
+        card: colors.surface,
+        text: colors.text,
+        border: colors.border,
+        notification: colors.accent,
+      },
+    };
+  }, [colors, dark]);
+
+  return (
+    <NavigationThemeProvider value={navigationTheme}>
+      <StatusBar style={dark ? 'light' : 'dark'} />
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: colors.bg },
@@ -31,6 +60,6 @@ export default function RootLayout() {
         <Stack.Screen name="settings" options={{ title: 'Settings' }} />
       </Stack>
       <DialogHost />
-    </SQLiteProvider>
+    </NavigationThemeProvider>
   );
 }

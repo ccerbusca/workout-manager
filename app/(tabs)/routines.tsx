@@ -5,9 +5,10 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { createRoutine, listRoutines } from '../../src/db/repo';
 import type { Routine } from '../../src/db/types';
 import { Button, Card, Empty, Field, SectionTitle } from '../../src/components/ui';
-import { font, space } from '../../src/theme';
+import { space, useTheme } from '../../src/theme';
 
 export default function RoutinesScreen() {
+  const { font } = useTheme();
   const db = useSQLiteContext();
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [name, setName] = useState('');

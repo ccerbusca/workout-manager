@@ -6,7 +6,7 @@ import { exerciseStats, getExerciseName, listWorkoutHistory } from '../src/db/re
 import type { LoadType } from '../src/db/types';
 import { Empty, Loading } from '../src/components/ui';
 import { formatDate, formatLoad, formatMonthYear, formatVolume } from '../src/lib/format';
-import { colors, font, space } from '../src/theme';
+import { space, useTheme } from '../src/theme';
 
 /** One row of the list, whichever kind of history is shown. */
 interface Row {
@@ -22,6 +22,7 @@ interface Row {
  *  /history?exerciseId=<id>&unit=<unit>  -> one exercise's sessions in that unit (kg or level)
  */
 export default function HistoryScreen() {
+  const { colors, font } = useTheme();
   const db = useSQLiteContext();
   const { exerciseId, unit } = useLocalSearchParams<{ exerciseId?: string; unit?: LoadType }>();
   const [title, setTitle] = useState(exerciseId ? 'Sessions' : 'All workouts');

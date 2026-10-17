@@ -6,9 +6,10 @@ import { getActiveWorkout, listRoutines, listWorkoutHistory, startWorkout } from
 import type { Routine, Workout, WorkoutSummary } from '../../src/db/types';
 import { Button, Card, Empty, SectionTitle } from '../../src/components/ui';
 import { formatDate, formatDuration, formatTime, formatVolume } from '../../src/lib/format';
-import { colors, font, space } from '../../src/theme';
+import { space, useTheme } from '../../src/theme';
 
 export default function TrainScreen() {
+  const { colors, font } = useTheme();
   const db = useSQLiteContext();
   const [active, setActive] = useState<Workout | null>(null);
   const [routines, setRoutines] = useState<Routine[]>([]);

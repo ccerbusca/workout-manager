@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, font, radius, space } from '../theme';
+import { type Colors, radius, space, type Theme, useTheme, useThemedStyles } from '../theme';
 
 export interface DialogButton {
   text: string;
@@ -29,6 +29,8 @@ export const Dialog = {
 };
 
 export function DialogHost() {
+  const styles = useThemedStyles(makeStyles);
+  const { colors, font } = useTheme();
   const [dialog, setDialog] = useState<DialogState | null>(null);
 
   useEffect(() => {
@@ -61,7 +63,7 @@ export function DialogHost() {
           {dialog?.message ? <Text style={[font.dim, { lineHeight: 20 }]}>{dialog.message}</Text> : null}
           <View style={[styles.buttons, stacked && { flexDirection: 'column' }]}>
             {buttons.map((b, i) => {
-              const v = variant(b.style);
+              const v = variant(colors, b.style);
               return (
                 <Pressable
                   key={i}
@@ -84,39 +86,41 @@ export function DialogHost() {
   );
 }
 
-function variant(style: DialogButton['style']) {
+function variant(colors: Colors, style: DialogButton['style']) {
   switch (style) {
     case 'cancel':
       return { bg: colors.surfaceAlt, fg: colors.text, border: colors.border };
     case 'destructive':
-      return { bg: colors.danger, fg: '#FFFFFF', border: colors.danger };
+      return { bg: colors.danger, fg: colors.dangerText, border: colors.danger };
     default:
       return { bg: colors.accent, fg: colors.accentText, border: colors.accent };
   }
 }
 
-const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    justifyContent: 'center',
-    padding: space.xl,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: space.xl,
-    gap: space.md,
-  },
-  buttons: { flexDirection: 'row', gap: space.sm, marginTop: space.sm },
-  button: {
-    paddingVertical: 14,
-    paddingHorizontal: space.lg,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  buttonText: { fontSize: 16, fontWeight: '700' },
-});
+/** Styles that depend on the theme; read them with useThemedStyles(makeStyles). */
+const makeStyles = ({ colors }: Theme) =>
+  StyleSheet.create({
+    backdrop: {
+      flex: 1,
+      backgroundColor: colors.backdrop,
+      justifyContent: 'center',
+      padding: space.xl,
+    },
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: space.xl,
+      gap: space.md,
+    },
+    buttons: { flexDirection: 'row', gap: space.sm, marginTop: space.sm },
+    button: {
+      paddingVertical: 14,
+      paddingHorizontal: space.lg,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      alignItems: 'center',
+    },
+    buttonText: { fontSize: 16, fontWeight: '700' },
+  });

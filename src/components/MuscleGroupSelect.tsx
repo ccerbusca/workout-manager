@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import type { MuscleGroup } from '../db/types';
-import { colors, font, radius, space } from '../theme';
+import { radius, space, useTheme } from '../theme';
 
 /**
  * Multi-select dropdown for an exercise's muscle groups.
@@ -17,6 +17,7 @@ export function MuscleGroupSelect(props: {
   /** Persists a new group and returns it; it then shows up for every exercise. */
   onCreate: (name: string) => Promise<MuscleGroup>;
 }) {
+  const { colors, font } = useTheme();
   const [open, setOpen] = useState(false);
   const [newName, setNewName] = useState('');
 

@@ -18,9 +18,10 @@ import {
 import type { RoutineExercise } from '../../src/db/types';
 import { ExercisePicker } from '../../src/components/ExercisePicker';
 import { Button, Card, Empty, Field, SectionTitle } from '../../src/components/ui';
-import { colors, font, space } from '../../src/theme';
+import { space, useTheme } from '../../src/theme';
 
 export default function RoutineEditor() {
+  const { colors, font } = useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const db = useSQLiteContext();
   const [name, setName] = useState('');
@@ -141,6 +142,7 @@ function IconBtn(props: {
   disabled?: boolean;
   color?: string;
 }) {
+  const { colors } = useTheme();
   return (
     <Pressable onPress={props.onPress} disabled={props.disabled} hitSlop={8} style={{ padding: 8, opacity: props.disabled ? 0.25 : 1 }}>
       <Ionicons name={props.name} size={20} color={props.color ?? colors.textDim} />

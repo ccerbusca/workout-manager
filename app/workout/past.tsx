@@ -8,7 +8,7 @@ import { Calendar, startOfDay } from '../../src/components/Calendar';
 import { Dialog } from '../../src/components/Dialog';
 import { Button, Card, SectionTitle, Stepper } from '../../src/components/ui';
 import { formatDate, parseNumber } from '../../src/lib/format';
-import { colors, font, radius, space } from '../../src/theme';
+import { radius, space, useTheme } from '../../src/theme';
 
 /** Pick when a past workout happened and which routine it was, then log its sets. */
 export default function PastWorkoutScreen() {
@@ -77,6 +77,7 @@ export default function PastWorkoutScreen() {
 }
 
 function Chip(props: { label: string; active: boolean; onPress: () => void }) {
+  const { colors } = useTheme();
   return (
     <Pressable
       onPress={props.onPress}

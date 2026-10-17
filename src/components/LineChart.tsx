@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Text, View, type LayoutChangeEvent } from 'react-native';
 import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
-import { colors, font } from '../theme';
+import { useTheme } from '../theme';
 
 export interface ChartPoint {
   x: number; // timestamp
@@ -15,6 +15,7 @@ export interface ChartPoint {
  * Tap a dot to see its value.
  */
 export function LineChart(props: { points: ChartPoint[]; height?: number; unit?: string }) {
+  const { colors, font } = useTheme();
   const { points, height = 200, unit = '' } = props;
   const [width, setWidth] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);

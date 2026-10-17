@@ -10,7 +10,7 @@ import {
   type TextInputProps,
   type ViewStyle,
 } from 'react-native';
-import { colors, font, radius, space } from '../theme';
+import { type Colors, radius, space, type Theme, useTheme, useThemedStyles } from '../theme';
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 
@@ -22,8 +22,10 @@ export function Button(props: {
   style?: StyleProp<ViewStyle>;
   big?: boolean;
 }) {
+  const styles = useThemedStyles(makeStyles);
   const { title, onPress, variant = 'primary', disabled, style, big } = props;
-  const v = buttonVariants[variant];
+  const { colors } = useTheme();
+  const v = buttonVariant(colors, variant);
   return (
     <Pressable
       onPress={onPress}
@@ -41,14 +43,22 @@ export function Button(props: {
   );
 }
 
-const buttonVariants: Record<ButtonVariant, { bg: string; fg: string; border: string }> = {
-  primary: { bg: colors.accent, fg: colors.accentText, border: colors.accent },
-  secondary: { bg: colors.surfaceAlt, fg: colors.text, border: colors.border },
-  ghost: { bg: 'transparent', fg: colors.textDim, border: 'transparent' },
-  danger: { bg: 'transparent', fg: colors.danger, border: colors.danger },
-};
+function buttonVariant(colors: Colors, variant: ButtonVariant): { bg: string; fg: string; border: string } {
+  switch (variant) {
+    case 'primary':
+      return { bg: colors.accent, fg: colors.accentText, border: colors.accent };
+    case 'secondary':
+      return { bg: colors.surfaceAlt, fg: colors.text, border: colors.border };
+    case 'ghost':
+      return { bg: 'transparent', fg: colors.textDim, border: 'transparent' };
+    case 'danger':
+      return { bg: 'transparent', fg: colors.danger, border: colors.danger };
+  }
+}
 
 export function Card(props: { children: React.ReactNode; style?: StyleProp<ViewStyle>; onPress?: () => void }) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   if (props.onPress) {
     return (
       <Pressable
@@ -63,6 +73,8 @@ export function Card(props: { children: React.ReactNode; style?: StyleProp<ViewS
 }
 
 export function Field(props: TextInputProps & { label?: string }) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors, font } = useTheme();
   const { label, style, ...rest } = props;
   return (
     <View style={{ gap: space.xs }}>
@@ -78,6 +90,7 @@ export function Field(props: TextInputProps & { label?: string }) {
 }
 
 export function SectionTitle(props: { children: React.ReactNode; right?: React.ReactNode }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.sectionRow}>
       <Text style={styles.sectionTitle}>{props.children}</Text>
@@ -87,6 +100,8 @@ export function SectionTitle(props: { children: React.ReactNode; right?: React.R
 }
 
 export function Empty(props: { title: string; hint?: string }) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors, font } = useTheme();
   return (
     <View style={styles.empty}>
       <Text style={[font.body, { color: colors.textDim, textAlign: 'center' }]}>{props.title}</Text>
@@ -96,6 +111,8 @@ export function Empty(props: { title: string; hint?: string }) {
 }
 
 export function Loading() {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   return (
     <View style={styles.empty}>
       <ActivityIndicator color={colors.accent} />
@@ -111,6 +128,8 @@ export function Stepper(props: {
   step: number;
   decimal?: boolean;
 }) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors, font } = useTheme();
   const { label, value, onChange, step, decimal } = props;
   const bump = (dir: 1 | -1) => {
     const n = Number(value.replace(',', '.')) || 0;
@@ -148,6 +167,8 @@ export function Segmented<T extends string>(props: {
   value: T;
   onChange: (v: T) => void;
 }) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   return (
     <View style={styles.segment}>
       {props.options.map((o) => {
@@ -166,76 +187,78 @@ export function Segmented<T extends string>(props: {
   );
 }
 
-const styles = StyleSheet.create({
-  button: {
-    paddingVertical: 12,
-    paddingHorizontal: space.lg,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonBig: { paddingVertical: 16 },
-  buttonText: { fontSize: 16, fontWeight: '700' },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: space.lg,
-  },
-  input: {
-    backgroundColor: colors.surfaceAlt,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    paddingHorizontal: space.md,
-    paddingVertical: 12,
-    color: colors.text,
-    fontSize: 16,
-  },
-  sectionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: space.lg,
-    marginBottom: space.sm,
-  },
-  sectionTitle: {
-    color: colors.textDim,
-    fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 1.2,
-  },
-  segment: {
-    flexDirection: 'row',
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 3,
-    gap: 3,
-  },
-  segmentItem: { flex: 1, paddingVertical: 10, borderRadius: radius.sm, alignItems: 'center' },
-  empty: { padding: space.xl, alignItems: 'center', gap: space.sm },
-  stepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  stepBtn: { width: 48, height: 56, alignItems: 'center', justifyContent: 'center' },
-  stepBtnText: { color: colors.accent, fontSize: 28, fontWeight: '600' },
-  stepInput: {
-    flex: 1,
-    color: colors.text,
-    fontSize: 26,
-    fontWeight: '800',
-    textAlign: 'center',
-    paddingVertical: 8,
-    fontVariant: ['tabular-nums'],
-  },
-});
+/** Styles that depend on the theme; read them with useThemedStyles(makeStyles). */
+const makeStyles = ({ colors }: Theme) =>
+  StyleSheet.create({
+    button: {
+      paddingVertical: 12,
+      paddingHorizontal: space.lg,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    buttonBig: { paddingVertical: 16 },
+    buttonText: { fontSize: 16, fontWeight: '700' },
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: space.lg,
+    },
+    input: {
+      backgroundColor: colors.surfaceAlt,
+      borderColor: colors.border,
+      borderWidth: 1,
+      borderRadius: radius.md,
+      paddingHorizontal: space.md,
+      paddingVertical: 12,
+      color: colors.text,
+      fontSize: 16,
+    },
+    sectionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: space.lg,
+      marginBottom: space.sm,
+    },
+    sectionTitle: {
+      color: colors.textDim,
+      fontSize: 13,
+      fontWeight: '700',
+      textTransform: 'uppercase',
+      letterSpacing: 1.2,
+    },
+    segment: {
+      flexDirection: 'row',
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 3,
+      gap: 3,
+    },
+    segmentItem: { flex: 1, paddingVertical: 10, borderRadius: radius.sm, alignItems: 'center' },
+    empty: { padding: space.xl, alignItems: 'center', gap: space.sm },
+    stepper: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    stepBtn: { width: 48, height: 56, alignItems: 'center', justifyContent: 'center' },
+    stepBtnText: { color: colors.accent, fontSize: 28, fontWeight: '600' },
+    stepInput: {
+      flex: 1,
+      color: colors.text,
+      fontSize: 26,
+      fontWeight: '800',
+      textAlign: 'center',
+      paddingVertical: 8,
+      fontVariant: ['tabular-nums'],
+    },
+  });

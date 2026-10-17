@@ -40,7 +40,7 @@ import {
   formatWeight,
   parseNumber,
 } from '../../src/lib/format';
-import { colors, font, radius, space } from '../../src/theme';
+import { radius, space, useTheme } from '../../src/theme';
 
 export default function WorkoutScreen() {
   const { id, edit } = useLocalSearchParams<{ id: string; edit?: string }>();
@@ -87,6 +87,7 @@ function ActiveWorkout({
   onFinished: () => void;
   onDone: () => void;
 }) {
+  const { colors, font } = useTheme();
   const db = useSQLiteContext();
   const isFinished = workout.ended_at != null;
   const [exercises, setExercises] = useState<WorkoutExercise[]>([]);
@@ -472,6 +473,7 @@ function ActiveWorkout({
 // ─────────────────────────── Finished workout ───────────────────────────
 
 function WorkoutSummaryView({ workout, onEdit }: { workout: Workout; onEdit: () => void }) {
+  const { font } = useTheme();
   const db = useSQLiteContext();
   const [rows, setRows] = useState<(WorkoutSet & { name: string; load_type: LoadType })[] | null>(null);
 
@@ -542,6 +544,7 @@ function WorkoutSummaryView({ workout, onEdit }: { workout: Workout; onEdit: () 
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
+  const { font } = useTheme();
   return (
     <Card style={{ flex: 1, padding: space.md }}>
       <Text style={font.small}>{label.toUpperCase()}</Text>

@@ -10,12 +10,13 @@ import { SectionTitle } from '../src/components/ui';
 import { backupFileName, fromLocalIso, parseBackup } from '../src/lib/backup';
 import { pickTextFile, shareJsonFile } from '../src/lib/backupFiles';
 import { formatDayMonth } from '../src/lib/format';
-import { colors, font, radius, space } from '../src/theme';
+import { radius, space, THEMES, type ThemeDef, useTheme } from '../src/theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
-/** App settings. For now: backup (JSON export / import). Opened from the gear in the tab header. */
+/** App settings: appearance (theme) and backup (JSON export / import). Opened from the gear in the tab header. */
 export default function SettingsScreen() {
+  const { colors, font, id: themeId, setTheme } = useTheme();
   const db = useSQLiteContext();
 
   const exportData = async () => {
@@ -70,6 +71,13 @@ export default function SettingsScreen() {
     <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }}>
       <Stack.Screen options={{ title: 'Settings' }} />
 
+      <SectionTitle>Theme</SectionTitle>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+        {THEMES.map((t) => (
+          <ThemeSwatch key={t.id} theme={t} active={t.id === themeId} onPress={() => setTheme(t.id)} />
+        ))}
+      </View>
+
       <SectionTitle>Backup</SectionTitle>
       <View style={{ borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
         <Row
@@ -98,6 +106,7 @@ export default function SettingsScreen() {
 }
 
 function Row(props: { icon: IconName; title: string; hint: string; onPress: () => void }) {
+  const { colors, font } = useTheme();
   return (
     <Pressable
       onPress={props.onPress}
@@ -115,6 +124,45 @@ function Row(props: { icon: IconName; title: string; hint: string; onPress: () =
         <Text style={font.small}>{props.hint}</Text>
       </View>
       <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+    </Pressable>
+  );
+}
+
+/** A tappable mini preview of a theme, drawn in that theme's own colours. */
+function ThemeSwatch(props: { theme: ThemeDef; active: boolean; onPress: () => void }) {
+  const { colors, font } = useTheme();
+  const c = props.theme.colors;
+  return (
+    <Pressable
+      onPress={props.onPress}
+      accessibilityRole="radio"
+      accessibilityState={{ selected: props.active }}
+      accessibilityLabel={`${props.theme.name} theme`}
+      style={({ pressed }) => ({
+        width: '31.5%',
+        borderRadius: radius.md,
+        borderWidth: 2,
+        borderColor: props.active ? colors.accent : colors.border,
+        padding: 4,
+        opacity: pressed ? 0.8 : 1,
+      })}
+    >
+      {/* Preview: page background, a card with two text lines, and an accent button */}
+      <View style={{ backgroundColor: c.bg, borderRadius: radius.sm, padding: 8, gap: 6 }}>
+        <View style={{ backgroundColor: c.surface, borderColor: c.border, borderWidth: 1, borderRadius: 6, padding: 6, gap: 4 }}>
+          <View style={{ height: 5, width: '70%', borderRadius: 3, backgroundColor: c.text }} />
+          <View style={{ height: 4, width: '45%', borderRadius: 2, backgroundColor: c.textDim }} />
+        </View>
+        <View style={{ height: 14, borderRadius: 5, backgroundColor: c.accent, alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ height: 3, width: '40%', borderRadius: 2, backgroundColor: c.accentText }} />
+        </View>
+      </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 6 }}>
+        {props.active ? <Ionicons name="checkmark-circle" size={14} color={colors.accent} /> : null}
+        <Text style={[font.dim, { fontWeight: props.active ? '800' : '600', color: props.active ? colors.text : colors.textDim }]}>
+          {props.theme.name}
+        </Text>
+      </View>
     </Pressable>
   );
 }
