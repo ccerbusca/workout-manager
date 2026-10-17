@@ -75,6 +75,14 @@ export default function TrainScreen() {
         </>
       )}
 
+      {/* Past workouts are saved as finished, so this works even while one is in progress */}
+      <Button
+        title="Log a past workout"
+        variant="ghost"
+        style={{ marginTop: space.sm }}
+        onPress={() => router.push('/workout/past')}
+      />
+
       <SectionTitle>Recent workouts</SectionTitle>
       {recent.length === 0 ? (
         <Empty title="Nothing logged yet" />

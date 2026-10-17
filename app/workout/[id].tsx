@@ -43,9 +43,13 @@ import {
 import { colors, font, radius, space } from '../../src/theme';
 
 export default function WorkoutScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, edit } = useLocalSearchParams<{ id: string; edit?: string }>();
   const db = useSQLiteContext();
   const [workout, setWorkout] = useState<Workout | null | undefined>(undefined);
+  // A finished workout opens as a read-only summary; "Edit" (or ?edit=1, used right after logging
+  // a past workout) shows the logging screen for it instead
+  const [editing, setEditing] = useState(edit === '1');
+  const reload = () => getWorkout(db, id).then(setWorkout);
 
   useEffect(() => {
     getWorkout(db, id).then(setWorkout);
@@ -54,17 +58,37 @@ export default function WorkoutScreen() {
   if (workout === undefined) return <Loading />;
   if (workout === null) return <Empty title="Workout not found" />;
 
-  return workout.ended_at ? (
-    <WorkoutSummaryView workout={workout} />
+  return workout.ended_at && !editing ? (
+    <WorkoutSummaryView workout={workout} onEdit={() => setEditing(true)} />
   ) : (
-    <ActiveWorkout workout={workout} onFinished={() => getWorkout(db, id).then(setWorkout)} />
+    <ActiveWorkout
+      workout={workout}
+      onFinished={reload}
+      onDone={() => {
+        setEditing(false);
+        reload();
+      }}
+    />
   );
 }
 
 // ─────────────────────────── Active workout ───────────────────────────
 
-function ActiveWorkout({ workout, onFinished }: { workout: Workout; onFinished: () => void }) {
+/**
+ * Logging screen. For a workout in progress it has a live timer and Finish/Discard. For a finished
+ * workout (a past one being logged, or one being edited) it has a "Done" button instead.
+ */
+function ActiveWorkout({
+  workout,
+  onFinished,
+  onDone,
+}: {
+  workout: Workout;
+  onFinished: () => void;
+  onDone: () => void;
+}) {
   const db = useSQLiteContext();
+  const isFinished = workout.ended_at != null;
   const [exercises, setExercises] = useState<WorkoutExercise[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sets, setSets] = useState<WorkoutSet[]>([]);
@@ -111,7 +135,7 @@ function ActiveWorkout({ workout, onFinished }: { workout: Workout; onFinished: 
     (async () => {
       const [current, last] = await Promise.all([
         listSets(db, workout.id, selectedId),
-        previousSets(db, selectedId, workout.id),
+        previousSets(db, selectedId, workout.id, workout.started_at),
       ]);
       if (cancelled) return;
       setSets(current);
@@ -122,7 +146,7 @@ function ActiveWorkout({ workout, onFinished }: { workout: Workout; onFinished: 
     return () => {
       cancelled = true;
     };
-  }, [db, workout.id, selectedId, loadType]);
+  }, [db, workout.id, workout.started_at, selectedId, loadType]);
 
   /** Suggest the next set: repeat the last one done today, else match last session's equivalent set. */
   const prefill = (current: WorkoutSet[], last: WorkoutSet[]) => {
@@ -252,7 +276,12 @@ function ActiveWorkout({ workout, onFinished }: { workout: Workout; onFinished: 
         <Stack.Screen
           options={{
             title: workout.routine_name ?? 'Free workout',
-            headerRight: () => <Button title="Finish" variant="ghost" onPress={finish} />,
+            headerRight: () =>
+              isFinished ? (
+                <Button title="Done" variant="ghost" onPress={onDone} />
+              ) : (
+                <Button title="Finish" variant="ghost" onPress={finish} />
+              ),
           }}
         />
         <ScrollView
@@ -261,7 +290,9 @@ function ActiveWorkout({ workout, onFinished }: { workout: Workout; onFinished: 
           scrollEnabled={!unitMenu} // otherwise sliding to an option scrolls the page and cancels the touch
         >
           <Text style={font.dim}>
-            Started {formatTime(workout.started_at)} · {formatDuration(workout.started_at, Date.now())}
+            {isFinished
+              ? `${formatDate(workout.started_at)} · ${formatTime(workout.started_at)} · ${formatDuration(workout.started_at, workout.ended_at ?? workout.started_at)}`
+              : `Started ${formatTime(workout.started_at)} · ${formatDuration(workout.started_at, Date.now())}`}
           </Text>
 
           {/* Exercise chooser */}
@@ -335,7 +366,7 @@ function ActiveWorkout({ workout, onFinished }: { workout: Workout; onFinished: 
               )}
 
               {/* Logged sets */}
-              <SectionTitle>Today</SectionTitle>
+              <SectionTitle>{isFinished ? 'Sets' : 'Today'}</SectionTitle>
               {sets.length === 0 ? (
                 <Text style={font.small}>No sets yet.</Text>
               ) : (
@@ -362,7 +393,12 @@ function ActiveWorkout({ workout, onFinished }: { workout: Workout; onFinished: 
                         <Text style={[font.body, { flex: 1, fontWeight: '700', fontVariant: ['tabular-nums'] }]}>
                           {formatLoad(s.weight, s.load_type)} × {s.reps}
                         </Text>
-                        <Text style={font.small}>{isEditing ? 'editing' : formatTime(s.created_at)}</Text>
+                        <Text style={font.small}>{isEditing
+                            ? 'editing'
+                            : // Sets added to a past workout were entered later, so their clock time means nothing
+                              !isFinished || s.created_at <= (workout.ended_at ?? 0)
+                              ? formatTime(s.created_at)
+                              : ''}</Text>
                       </Pressable>
                     );
                   })}
@@ -392,8 +428,14 @@ function ActiveWorkout({ workout, onFinished }: { workout: Workout; onFinished: 
           )}
 
           <View style={{ gap: space.sm, marginTop: space.xl }}>
-            <Button title="Finish workout" variant="secondary" onPress={finish} />
-            <Button title="Discard workout" variant="ghost" onPress={discard} />
+            {isFinished ? (
+              <Button title="Done" variant="secondary" onPress={onDone} />
+            ) : (
+              <>
+                <Button title="Finish workout" variant="secondary" onPress={finish} />
+                <Button title="Discard workout" variant="ghost" onPress={discard} />
+              </>
+            )}
           </View>
         </ScrollView>
 
@@ -429,7 +471,7 @@ function ActiveWorkout({ workout, onFinished }: { workout: Workout; onFinished: 
 
 // ─────────────────────────── Finished workout ───────────────────────────
 
-function WorkoutSummaryView({ workout }: { workout: Workout }) {
+function WorkoutSummaryView({ workout, onEdit }: { workout: Workout; onEdit: () => void }) {
   const db = useSQLiteContext();
   const [rows, setRows] = useState<(WorkoutSet & { name: string; load_type: LoadType })[] | null>(null);
 
@@ -464,7 +506,9 @@ function WorkoutSummaryView({ workout }: { workout: Workout }) {
 
   return (
     <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }}>
-      <Stack.Screen options={{ title: workout.routine_name ?? 'Free workout', headerRight: () => null }} />
+      <Stack.Screen
+        options={{ title: workout.routine_name ?? 'Free workout', headerRight: () => <Button title="Edit" variant="ghost" onPress={onEdit} /> }}
+      />
       <Text style={font.h1}>{formatDate(workout.started_at)}</Text>
       <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.md }}>
         <Stat label="Duration" value={formatDuration(workout.started_at, workout.ended_at ?? workout.started_at)} />

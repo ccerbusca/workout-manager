@@ -4,25 +4,18 @@ import { Dialog } from '../../src/components/Dialog';
 import { useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { createExercise, deleteExercise, listExercises, updateExercise } from '../../src/db/repo';
-import type { Exercise, LoadType } from '../../src/db/types';
-import { Button, Card, Field, SectionTitle, Segmented } from '../../src/components/ui';
+import type { Exercise } from '../../src/db/types';
+import { Button, Card, Field, SectionTitle } from '../../src/components/ui';
 import { font, space } from '../../src/theme';
-
-const LOAD_OPTIONS: { value: LoadType; label: string }[] = [
-  { value: 'weight', label: 'Weight (kg)' },
-  { value: 'level', label: 'Machine level' },
-];
 
 export default function ExercisesScreen() {
   const db = useSQLiteContext();
   const [items, setItems] = useState<Exercise[]>([]);
   const [name, setName] = useState('');
   const [group, setGroup] = useState('');
-  const [loadType, setLoadType] = useState<LoadType>('weight');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editGroup, setEditGroup] = useState('');
-  const [editLoadType, setEditLoadType] = useState<LoadType>('weight');
 
   const load = useCallback(() => {
     listExercises(db).then(setItems);
@@ -31,10 +24,9 @@ export default function ExercisesScreen() {
 
   const add = async () => {
     if (!name.trim()) return;
-    await createExercise(db, name, group, loadType);
+    await createExercise(db, name, group);
     setName('');
     setGroup('');
-    setLoadType('weight');
     load();
   };
 
@@ -42,12 +34,11 @@ export default function ExercisesScreen() {
     setEditingId(e.id);
     setEditName(e.name);
     setEditGroup(e.muscle_group ?? '');
-    setEditLoadType(e.load_type);
   };
 
   const saveEdit = async () => {
     if (!editingId || !editName.trim()) return;
-    await updateExercise(db, editingId, editName, editGroup, editLoadType);
+    await updateExercise(db, editingId, editName, editGroup);
     setEditingId(null);
     load();
   };
@@ -80,8 +71,6 @@ export default function ExercisesScreen() {
         <Text style={font.h2}>Add exercise</Text>
         <Field placeholder="Name, e.g. Hip Thrust" value={name} onChangeText={setName} />
         <Field placeholder="Muscle group (optional)" value={group} onChangeText={setGroup} />
-        <Text style={font.dim}>Measured in</Text>
-        <Segmented options={LOAD_OPTIONS} value={loadType} onChange={setLoadType} />
         <Button title="Add" onPress={add} disabled={!name.trim()} />
       </Card>
 
@@ -94,7 +83,6 @@ export default function ExercisesScreen() {
                 <Card key={e.id} style={{ gap: space.sm }}>
                   <Field value={editName} onChangeText={setEditName} placeholder="Name" />
                   <Field value={editGroup} onChangeText={setEditGroup} placeholder="Muscle group" />
-                  <Segmented options={LOAD_OPTIONS} value={editLoadType} onChange={setEditLoadType} />
                   <View style={{ flexDirection: 'row', gap: space.sm }}>
                     <Button title="Save" onPress={saveEdit} style={{ flex: 1 }} />
                     <Button title="Cancel" variant="secondary" onPress={() => setEditingId(null)} style={{ flex: 1 }} />

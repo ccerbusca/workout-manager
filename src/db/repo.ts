@@ -63,13 +63,13 @@ export async function createExercise(
   db: SQLiteDatabase,
   name: string,
   muscleGroup: string | null,
-  loadType: LoadType = 'weight',
 ): Promise<string> {
+  // New exercises start in kg; switch to levels with a long-press in a workout (setExerciseLoadType)
   const id = newId();
   const t = now();
   await db.runAsync(
-    'INSERT INTO exercises (id, name, muscle_group, load_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-    id, name.trim(), muscleGroup?.trim() || null, loadType, t, t,
+    `INSERT INTO exercises (id, name, muscle_group, load_type, created_at, updated_at) VALUES (?, ?, ?, 'weight', ?, ?)`,
+    id, name.trim(), muscleGroup?.trim() || null, t, t,
   );
   return id;
 }
@@ -79,11 +79,11 @@ export async function updateExercise(
   id: string,
   name: string,
   muscleGroup: string | null,
-  loadType: LoadType,
 ): Promise<void> {
+  // The unit (kg/level) is switched mid-workout with a long-press instead (setExerciseLoadType)
   await db.runAsync(
-    'UPDATE exercises SET name = ?, muscle_group = ?, load_type = ?, updated_at = ? WHERE id = ?',
-    name.trim(), muscleGroup?.trim() || null, loadType, now(), id,
+    'UPDATE exercises SET name = ?, muscle_group = ?, updated_at = ? WHERE id = ?',
+    name.trim(), muscleGroup?.trim() || null, now(), id,
   );
 }
 
@@ -213,8 +213,16 @@ export function getWorkout(db: SQLiteDatabase, id: string): Promise<Workout | nu
   );
 }
 
-/** Starts a workout, copying the routine's exercises into the workout. */
-export async function startWorkout(db: SQLiteDatabase, routineId: string | null): Promise<string> {
+/**
+ * Starts a workout, copying the routine's exercises into the workout.
+ * Pass `past` to log a workout that already happened: it is created finished, with those times,
+ * so it never counts as the workout in progress.
+ */
+export async function startWorkout(
+  db: SQLiteDatabase,
+  routineId: string | null,
+  past?: { startedAt: number; endedAt: number },
+): Promise<string> {
   const id = newId();
   const t = now();
   await db.withTransactionAsync(async () => {
@@ -224,9 +232,9 @@ export async function startWorkout(db: SQLiteDatabase, routineId: string | null)
       routineName = r?.name ?? null;
     }
     await db.runAsync(
-      `INSERT INTO workouts (id, routine_id, routine_name, started_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      id, routineId, routineName, t, t, t,
+      `INSERT INTO workouts (id, routine_id, routine_name, started_at, ended_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      id, routineId, routineName, past?.startedAt ?? t, past?.endedAt ?? null, t, t,
     );
     if (routineId) {
       const exercises = await listRoutineExercises(db, routineId);
@@ -368,19 +376,24 @@ export async function deleteSet(db: SQLiteDatabase, setId: string): Promise<void
   await db.runAsync('UPDATE workout_sets SET deleted_at = ?, updated_at = ? WHERE id = ?', t, t, setId);
 }
 
-/** Sets from the most recent *other* workout that included this exercise. */
+/**
+ * Sets from the most recent workout before `before` (a workout's started_at) that included this
+ * exercise. The cut-off matters when logging or editing a past workout: it compares against what
+ * came before it, not against newer workouts.
+ */
 export async function previousSets(
   db: SQLiteDatabase,
   exerciseId: string,
   excludeWorkoutId: string,
+  before: number,
 ): Promise<{ started_at: number; sets: WorkoutSet[] } | null> {
   const last = await db.getFirstAsync<{ id: string; started_at: number }>(
     `SELECT w.id, w.started_at FROM workouts w
-     WHERE w.deleted_at IS NULL AND w.id <> ?
+     WHERE w.deleted_at IS NULL AND w.id <> ? AND w.started_at < ?
        AND EXISTS (SELECT 1 FROM workout_sets s
                    WHERE s.workout_id = w.id AND s.exercise_id = ? AND s.deleted_at IS NULL)
      ORDER BY w.started_at DESC LIMIT 1`,
-    excludeWorkoutId, exerciseId,
+    excludeWorkoutId, before, exerciseId,
   );
   if (!last) return null;
   return { started_at: last.started_at, sets: await listSets(db, last.id, exerciseId) };
