@@ -76,3 +76,60 @@ export interface ExerciseSessionStats {
   total_reps: number;
   set_count: number;
 }
+
+// ───────────────────────── Backup file (JSON export / import) ─────────────────────────
+// Human-readable and nested. Exercises and routines are referenced by name within the file.
+// Ids are optional: when present, importing the same file twice adds nothing new.
+// Times are local "YYYY-MM-DDTHH:mm" strings.
+
+export interface BackupFile {
+  format: 'workout-manager';
+  version: 1;
+  exportedAt?: string;
+  exercises: BackupExercise[];
+  routines?: BackupRoutine[];
+  workouts: BackupWorkout[];
+}
+
+export interface BackupExercise {
+  id?: string;
+  name: string;
+  loadType?: LoadType;
+  muscleGroups?: string[];
+  /** Deleted in the app but still referenced by logged sets. */
+  deleted?: boolean;
+}
+
+export interface BackupRoutine {
+  id?: string;
+  name: string;
+  /** Exercise names, in order. */
+  exercises: string[];
+}
+
+export interface BackupWorkout {
+  id?: string;
+  /** Routine name (the snapshot shown in history); null for an empty workout. */
+  routine?: string | null;
+  startedAt: string;
+  endedAt?: string | null;
+  notes?: string | null;
+  exercises: { exercise: string; sets: BackupSet[] }[];
+}
+
+export interface BackupSet {
+  id?: string;
+  weight: number;
+  reps: number;
+  /** Defaults to the exercise's unit. */
+  loadType?: LoadType;
+}
+
+export interface ImportResult {
+  exercisesAdded: number;
+  exercisesMatched: number;
+  routinesAdded: number;
+  workoutsAdded: number;
+  workoutsSkipped: number;
+  setsAdded: number;
+}

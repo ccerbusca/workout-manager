@@ -2,7 +2,17 @@ import React, { useCallback, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { getActiveWorkout, listRoutines, listWorkoutHistory, startWorkout } from '../../src/db/repo';
+import {
+  exportBackup,
+  getActiveWorkout,
+  importBackup,
+  listRoutines,
+  listWorkoutHistory,
+  startWorkout,
+} from '../../src/db/repo';
+import { Dialog } from '../../src/components/Dialog';
+import { backupFileName, fromLocalIso, parseBackup } from '../../src/lib/backup';
+import { pickTextFile, shareJsonFile } from '../../src/lib/backupFiles';
 import type { Routine, Workout, WorkoutSummary } from '../../src/db/types';
 import { Button, Card, Empty, SectionTitle } from '../../src/components/ui';
 import { formatDate, formatDuration, formatTime, formatVolume } from '../../src/lib/format';
@@ -23,6 +33,62 @@ export default function TrainScreen() {
       })();
     }, [db]),
   );
+
+  const reload = async () => {
+    setActive(await getActiveWorkout(db));
+    setRoutines(await listRoutines(db));
+    setRecent(await listWorkoutHistory(db, 5));
+  };
+
+  const exportData = async () => {
+    try {
+      const data = await exportBackup(db);
+      await shareJsonFile(backupFileName(Date.now()), JSON.stringify(data, null, 2));
+    } catch (e) {
+      Dialog.alert('Export failed', e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const importData = async () => {
+    let file;
+    try {
+      const text = await pickTextFile();
+      if (text == null) return;
+      file = parseBackup(JSON.parse(text));
+    } catch (e) {
+      Dialog.alert('Can’t read that file', e instanceof Error ? e.message : String(e));
+      return;
+    }
+    const times = file.workouts.map((w) => fromLocalIso(w.startedAt)!).sort((a, b) => a - b);
+    const day = (ms: number) => `${formatDate(ms)} ${new Date(ms).getFullYear()}`;
+    const range = times.length ? ` from ${day(times[0])} to ${day(times[times.length - 1])}` : '';
+    const parked = file;
+    Dialog.alert(
+      'Import this file?',
+      `${file.workouts.length} workouts${range}, ${file.exercises.length} exercises and ${file.routines?.length ?? 0} routines.\n\n` +
+        'Only adds what’s missing: nothing on the phone is changed or deleted, and importing the same file again adds nothing.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Import',
+          onPress: async () => {
+            try {
+              const r = await importBackup(db, parked);
+              await reload();
+              Dialog.alert(
+                'Import done',
+                `Added ${r.workoutsAdded} workouts (${r.setsAdded} sets), ${r.exercisesAdded} new exercises and ${r.routinesAdded} routines.` +
+                  (r.exercisesMatched ? ` ${r.exercisesMatched} exercises matched ones you already had.` : '') +
+                  (r.workoutsSkipped ? ` ${r.workoutsSkipped} workouts were already here and were skipped.` : ''),
+              );
+            } catch (e) {
+              Dialog.alert('Import failed', `Nothing was changed.\n\n${e instanceof Error ? e.message : String(e)}`);
+            }
+          },
+        },
+      ],
+    );
+  };
 
   const start = async (routineId: string | null) => {
     const id = await startWorkout(db, routineId);
@@ -99,6 +165,15 @@ export default function TrainScreen() {
           ))}
         </View>
       )}
+
+      <SectionTitle>Backup</SectionTitle>
+      <Text style={[font.small, { marginBottom: space.sm }]}>
+        Save everything to a JSON file (Drive, Files…), or import one, e.g. an old export or converted history.
+      </Text>
+      <View style={{ flexDirection: 'row', gap: space.sm }}>
+        <Button title="Export" variant="secondary" onPress={exportData} style={{ flex: 1 }} />
+        <Button title="Import" variant="secondary" onPress={importData} style={{ flex: 1 }} />
+      </View>
     </ScrollView>
   );
 }

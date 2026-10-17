@@ -11,3 +11,6 @@ expo-env.d.ts
 # Local AI context (Claude Code handover notes), not part of the repo
 CLAUDE.md
 context/
+
+# Personal workout data and the one-off sheet converter (not part of the app)
+imports/

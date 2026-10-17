@@ -1,7 +1,12 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { newId, now } from '../lib/id';
+import { fromLocalIso, toLocalIso } from '../lib/backup';
 import type {
+  BackupExercise,
+  BackupFile,
+  BackupWorkout,
   Exercise,
+  ImportResult,
   LoadType,
   MuscleGroup,
   ExerciseSessionStats,
@@ -538,4 +543,215 @@ export async function listLoggedUnits(db: SQLiteDatabase, exerciseId: string): P
     exerciseId,
   );
   return rows.map((r) => r.load_type);
+}
+
+// ───────────────────────── Backup (JSON export / import) ─────────────────────────
+
+/**
+ * Everything worth keeping, as a BackupFile: exercises (plus deleted ones that history still
+ * uses), routines, and finished workouts with their sets. A workout in progress is left out.
+ */
+export async function exportBackup(db: SQLiteDatabase): Promise<BackupFile> {
+  const exRows = await db.getAllAsync<{ id: string; name: string; load_type: LoadType; deleted: number }>(
+    `SELECT e.id, e.name, e.load_type, e.deleted_at IS NOT NULL AS deleted
+     FROM exercises e
+     WHERE e.deleted_at IS NULL
+        OR EXISTS (SELECT 1 FROM workout_sets s JOIN workouts w ON w.id = s.workout_id
+                   WHERE s.exercise_id = e.id AND s.deleted_at IS NULL AND w.deleted_at IS NULL)
+     ORDER BY e.deleted_at IS NOT NULL, e.name COLLATE NOCASE`,
+  );
+  const links = await listExerciseMuscleGroupLinks(db);
+
+  // The file references exercises by name, so names must be unique within it
+  const fileName = new Map<string, string>();
+  const used = new Set<string>();
+  const exercises: BackupExercise[] = exRows.map((e) => {
+    let name = e.name;
+    for (let n = 2; used.has(name.toLowerCase()); n++) name = `${e.name} (${n})`;
+    used.add(name.toLowerCase());
+    fileName.set(e.id, name);
+    return {
+      id: e.id,
+      name,
+      loadType: e.load_type,
+      muscleGroups: links.filter((l) => l.exercise_id === e.id).map((l) => l.name).sort(),
+      ...(e.deleted ? { deleted: true } : {}),
+    };
+  });
+
+  const routineRows = await db.getAllAsync<{ id: string; name: string }>(
+    'SELECT id, name FROM routines WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE',
+  );
+  const routines = [];
+  for (const r of routineRows) {
+    const items = await listRoutineExercises(db, r.id);
+    routines.push({ id: r.id, name: r.name, exercises: items.map((x) => fileName.get(x.exercise_id) ?? x.name) });
+  }
+
+  const workoutRows = await db.getAllAsync<Workout>(
+    `SELECT id, routine_id, routine_name, started_at, ended_at, notes FROM workouts
+     WHERE deleted_at IS NULL AND ended_at IS NOT NULL ORDER BY started_at`,
+  );
+  const workouts: BackupWorkout[] = [];
+  for (const w of workoutRows) {
+    const order = await db.getAllAsync<{ exercise_id: string }>(
+      'SELECT exercise_id FROM workout_exercises WHERE workout_id = ? AND deleted_at IS NULL ORDER BY position',
+      w.id,
+    );
+    const sets = await db.getAllAsync<WorkoutSet>(
+      `SELECT id, workout_id, exercise_id, set_index, weight, reps, load_type, created_at FROM workout_sets
+       WHERE workout_id = ? AND deleted_at IS NULL ORDER BY set_index`,
+      w.id,
+    );
+    // Listed exercises first (even with no sets), then any that only have sets
+    const ids = [...new Set([...order.map((o) => o.exercise_id), ...sets.map((s) => s.exercise_id)])];
+    workouts.push({
+      id: w.id,
+      routine: w.routine_name,
+      startedAt: toLocalIso(w.started_at),
+      endedAt: toLocalIso(w.ended_at ?? w.started_at),
+      notes: w.notes,
+      exercises: ids
+        .filter((id) => fileName.has(id))
+        .map((id) => ({
+          exercise: fileName.get(id)!,
+          sets: sets
+            .filter((s) => s.exercise_id === id)
+            .map((s) => ({ id: s.id, weight: s.weight, reps: s.reps, loadType: s.load_type })),
+        })),
+    });
+  }
+
+  return { format: 'workout-manager', version: 1, exportedAt: toLocalIso(now()), exercises, routines, workouts };
+}
+
+/**
+ * Adds a BackupFile's contents to the database, in one transaction. Additive only: nothing on
+ * the phone is changed or deleted.
+ *  - Exercises match by id, then by name (case-insensitive); unmatched ones are created.
+ *  - Routines are skipped if their id or name already exists.
+ *  - Workouts are skipped if their id already exists, so importing the same file twice is harmless.
+ */
+export async function importBackup(db: SQLiteDatabase, file: BackupFile): Promise<ImportResult> {
+  const result: ImportResult = {
+    exercisesAdded: 0,
+    exercisesMatched: 0,
+    routinesAdded: 0,
+    workoutsAdded: 0,
+    workoutsSkipped: 0,
+    setsAdded: 0,
+  };
+  const t = now();
+
+  await db.withTransactionAsync(async () => {
+    // Exercises: file name (lower case) -> database id, and database id -> current unit
+    const exId = new Map<string, string>();
+    const exLoad = new Map<string, LoadType>();
+    for (const e of file.exercises) {
+      let row = e.id
+        ? await db.getFirstAsync<{ id: string; load_type: LoadType }>('SELECT id, load_type FROM exercises WHERE id = ?', e.id)
+        : null;
+      if (!row && !e.deleted) {
+        row = await db.getFirstAsync<{ id: string; load_type: LoadType }>(
+          `SELECT id, load_type FROM exercises WHERE lower(name) = lower(?) AND deleted_at IS NULL
+           ORDER BY created_at LIMIT 1`,
+          e.name,
+        );
+      }
+      if (row) {
+        result.exercisesMatched++;
+      } else {
+        const id = e.id ?? newId();
+        const loadType = e.loadType ?? 'weight';
+        await db.runAsync(
+          'INSERT INTO exercises (id, name, load_type, created_at, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?)',
+          id, e.name, loadType, t, t, e.deleted ? t : null,
+        );
+        for (const g of new Set(e.muscleGroups ?? [])) {
+          const groupId = await findOrInsertMuscleGroup(db, g, t);
+          await db.runAsync(
+            'INSERT INTO exercise_muscle_groups (id, exercise_id, muscle_group_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+            newId(), id, groupId, t, t,
+          );
+        }
+        row = { id, load_type: loadType };
+        result.exercisesAdded++;
+      }
+      exId.set(e.name.toLowerCase(), row.id);
+      exLoad.set(row.id, row.load_type);
+    }
+
+    for (const r of file.routines ?? []) {
+      const exists = await db.getFirstAsync(
+        'SELECT 1 FROM routines WHERE id = ? OR (lower(name) = lower(?) AND deleted_at IS NULL)',
+        r.id ?? '', r.name,
+      );
+      if (exists) continue;
+      const id = r.id ?? newId();
+      await db.runAsync('INSERT INTO routines (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)', id, r.name, t, t);
+      const ids = [...new Set(r.exercises.map((n) => exId.get(n.toLowerCase())!))];
+      for (let i = 0; i < ids.length; i++) {
+        await db.runAsync(
+          `INSERT INTO routine_exercises (id, routine_id, exercise_id, position, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          newId(), id, ids[i], i, t, t,
+        );
+      }
+      result.routinesAdded++;
+    }
+
+    for (const w of file.workouts) {
+      if (w.id && (await db.getFirstAsync('SELECT 1 FROM workouts WHERE id = ?', w.id))) {
+        result.workoutsSkipped++;
+        continue;
+      }
+      const id = w.id ?? newId();
+      const startedAt = fromLocalIso(w.startedAt)!;
+      const endedAt = w.endedAt ? fromLocalIso(w.endedAt)! : startedAt; // imports are always finished
+      const routine = w.routine
+        ? await db.getFirstAsync<{ id: string }>(
+            'SELECT id FROM routines WHERE lower(name) = lower(?) AND deleted_at IS NULL',
+            w.routine,
+          )
+        : null;
+      await db.runAsync(
+        `INSERT INTO workouts (id, routine_id, routine_name, started_at, ended_at, notes, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, routine?.id ?? null, w.routine ?? null, startedAt, endedAt, w.notes ?? null, t, t,
+      );
+
+      // Merge repeated entries for the same exercise, keeping first-seen order
+      const byExercise = new Map<string, BackupWorkout['exercises'][number]['sets']>();
+      for (const we of w.exercises) {
+        const eid = exId.get(we.exercise.toLowerCase())!;
+        byExercise.set(eid, [...(byExercise.get(eid) ?? []), ...we.sets]);
+      }
+      // Spread set timestamps across the workout so ordering by created_at matches the file
+      const total = [...byExercise.values()].reduce((n, s) => n + s.length, 0);
+      const step = (endedAt - startedAt) / (total + 1);
+      let seq = 0;
+      let position = 0;
+      for (const [eid, sets] of byExercise) {
+        await db.runAsync(
+          `INSERT INTO workout_exercises (id, workout_id, exercise_id, position, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          newId(), id, eid, position++, t, t,
+        );
+        for (let i = 0; i < sets.length; i++) {
+          const s = sets[i];
+          const taken = s.id ? await db.getFirstAsync('SELECT 1 FROM workout_sets WHERE id = ?', s.id) : null;
+          await db.runAsync(
+            `INSERT INTO workout_sets (id, workout_id, exercise_id, set_index, weight, reps, load_type, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            s.id && !taken ? s.id : newId(), id, eid, i + 1, s.weight, s.reps,
+            s.loadType ?? exLoad.get(eid) ?? 'weight', Math.round(startedAt + step * ++seq), t,
+          );
+          result.setsAdded++;
+        }
+      }
+      result.workoutsAdded++;
+    }
+  });
+
+  return result;
 }
