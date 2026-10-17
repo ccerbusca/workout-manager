@@ -1,66 +1,81 @@
 # Workout Manager
 
-A phone app (Android + iPhone) for logging workouts. Built with **React Native + Expo** in TypeScript. All data is stored on the phone in **SQLite**.
+A personal workout log for Android (iPhone later). React Native + Expo SDK 57, TypeScript, with all data in SQLite on the phone.
 
-## Run it on your phone (Windows)
+## Running it
 
-1. Install **Node.js LTS** (22 or newer) from https://nodejs.org if you don't have it. Check with `node -v`.
-2. Install **Expo Go** on your phone (Play Store / App Store).
-3. Open a terminal in this folder and run, once:
-   ```
-   npm run setup
-   ```
-   This installs the latest Expo SDK and the library versions that match it.
-4. Start the dev server:
-   ```
-   npx expo start
-   ```
-   Scan the QR code. On **Android**, scan it from inside Expo Go. On **iPhone**, use the Camera app.
-   Your phone and PC must be on the same Wi-Fi. If they aren't, or the phone can't connect, use `npx expo start --tunnel`.
-   If Windows Firewall asks about Node.js, allow it on private networks.
-
-Save any file and the app reloads on your phone right away. To force a full reload, shake the phone and tap *Reload*.
-
-## How the app works
-
-| Tab | What it does |
-|---|---|
-| **Train** | Start a workout from one of your routines (or an empty one). Resume an in-progress workout. |
-| **Routines** | Create named groups of exercises ("Push day", "Legs"…). They aren't tied to weekdays. |
-| **Exercises** | Your exercise library. It starts with ~13 common lifts, and you can add, rename or delete. |
-| **Progress** | Per-exercise chart (estimated 1RM / top weight / volume) plus your workout history. |
-
-While a workout is running, pick the exercise you're on. The screen shows what you lifted *last time*. Enter kg and reps with the big −/+ steppers and tap **Log set**. Tap a logged set to edit it, or long-press it to delete it.
-
-## Project layout
+You need Node.js 22+ and the Expo Go app on the phone.
 
 ```
-app/                      ← screens; file path = route (expo-router, like Next.js)
-  _layout.tsx             ← root: opens the DB, runs migrations, sets up navigation
-  (tabs)/                 ← the 4 bottom tabs
-  routine/[id].tsx        ← routine editor
-  workout/[id].tsx        ← active workout logging + finished-workout summary
+npm run setup      # npm install, then npx expo install --fix to align versions with the SDK
+npm run typecheck  # tsc --noEmit
+npx expo start     # scan the QR code from Expo Go; phone and PC on the same Wi-Fi
+```
+
+If the phone can't reach the PC, use `npx expo start --tunnel`. Saving a file reloads the app on the phone.
+
+There are no tests, linter or formatter yet.
+
+## What it does
+
+- **Train:** start a workout from a routine or empty, resume one in progress, or log a past workout for a chosen date, start time and duration.
+- **Routines:** named, ordered groups of exercises. Not tied to weekdays.
+- **Exercises:** the exercise library, grouped by muscle group. An exercise can belong to several groups, picked from a shared list you can add to.
+- **Progress:** pick an exercise from a searchable dropdown to see its chart (estimated 1RM, top weight, volume; or top level and total reps for machine exercises), its recent sessions, and recent workouts. "See all" opens the full history grouped by month.
+- **Settings** (gear in the header): colour theme (Lime, Purple, Ocean, Ember, Light) and JSON export/import.
+
+During a workout, pick the exercise you're on, see what you did last time, and log weight and reps with the −/+ steppers. Tap a set to edit it and long-press to delete it. Long-press an exercise to switch it between kg and machine levels. Each set keeps the unit it was logged in, so history stays correct after a switch.
+
+Finished workouts can be edited from their summary screen.
+
+## Backups
+
+Settings → Export writes everything to a JSON file and opens the share sheet. Import reads such a file back. It only adds what's missing (matching by id, then by exercise name), so importing the same file twice changes nothing. The format is `BackupFile` in `src/db/types.ts`.
+
+Uninstalling the app deletes its data. To update, install a new APK over the old one.
+
+## Building an APK
+
+```
+eas build -p android --profile preview
+```
+
+This builds in Expo's cloud and gives you an installable `.apk`. The project is already linked to EAS (`eas.json`, `app.json`).
+
+## Code layout
+
+```
+app/                  screens; the file path is the route (expo-router)
+  _layout.tsx         opens the database, runs migrations, sets up theme and navigation
+  (tabs)/             Train, Routines, Exercises, Progress
+  routine/[id].tsx    routine editor
+  workout/[id].tsx    workout logging and finished-workout summary
+  workout/past.tsx    log a past workout
+  history.tsx         full history list
+  settings.tsx        theme and backup
 src/
-  db/migrations.ts        ← schema, versioned with PRAGMA user_version
-  db/repo.ts              ← ALL SQL lives here (screens never write SQL)
-  db/types.ts             ← row types
-  components/             ← UI kit, exercise picker, SVG line chart
-  theme.ts                ← colours, spacing, type
+  db/migrations.ts    schema migrations, versioned with PRAGMA user_version
+  db/repo.ts          all SQL
+  db/types.ts         row and backup-file types
+  components/         shared UI (buttons, cards, steppers, dialogs, chart, pickers)
+  lib/                formatting, ids, backup parsing, file sharing
+  theme.ts            themes, useTheme(), spacing
 ```
 
-## Data model
+## Data
 
 ```
-exercises ─┐
-           ├─< routine_exercises >── routines
+muscle_groups ─< exercise_muscle_groups >─ exercises
+exercises ─┬─< routine_exercises >── routines
            ├─< workout_exercises >─┐
            └─< workout_sets ───────┴── workouts
 ```
 
-Every table uses **UUID primary keys**, `created_at`/`updated_at`, and a `deleted_at` soft-delete column. That makes adding a server later straightforward: the phone pushes rows whose `updated_at` is newer than the last sync, and the server merges them (last write wins). No ids need remapping.
+Every table has a client-generated UUID `id`, `created_at`/`updated_at` in epoch milliseconds, and a `deleted_at` column for soft deletes. This is so a sync server can be added later without remapping ids.
 
-To change the schema, **append** a new SQL string to `MIGRATIONS` in `src/db/migrations.ts`. Never edit an existing one.
+Conventions:
 
-## Later: building a real installable app
-
-Expo Go is for development. To get a standalone app on your phone without the dev server, use EAS Build (`npm i -g eas-cli`, then `eas build -p android --profile preview`). It builds in the cloud, so iPhone builds don't need a Mac. You do need an Apple Developer account ($99/yr) to install on an iPhone outside Expo Go.
+- Screens never run SQL; it all goes through `src/db/repo.ts`.
+- To change the schema, append to `MIGRATIONS` in `src/db/migrations.ts`. Never edit an existing migration, because phones may already have run it.
+- `load_type` (`'weight'` or `'level'`) is stored on both the exercise (its current unit) and each set (the unit it was logged in). Volume only counts weight sets, and charts show one unit at a time.
+- Colours come from `useTheme()`. Don't hardcode them.
