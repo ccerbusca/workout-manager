@@ -3,20 +3,19 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import {
-  countWorkoutHistory,
   exerciseStats,
   listExerciseMuscleGroupLinks,
   listLoggedUnits,
   listTrainedExercises,
-  listWorkoutHistory,
 } from '../../src/db/repo';
-import type { ExerciseSessionStats, LoadType, TrainedExercise, WorkoutSummary } from '../../src/db/types';
+import type { ExerciseSessionStats, LoadType, TrainedExercise } from '../../src/db/types';
 import { ConsistencyCard } from '../../src/components/ConsistencyCard';
 import { ExerciseDropdown } from '../../src/components/ExerciseDropdown';
+import { MuscleBalanceCard } from '../../src/components/MuscleBalance';
 import { LineChart, type ChartPoint } from '../../src/components/LineChart';
 import { RecordsCard } from '../../src/components/RecordsCard';
-import { Button, Card, Empty, SectionTitle, Segmented } from '../../src/components/ui';
-import { formatDate, formatLoad, formatShortDate, formatVolume } from '../../src/lib/format';
+import { Button, Empty, SectionTitle, Segmented } from '../../src/components/ui';
+import { formatDate, formatLoad, formatShortDate } from '../../src/lib/format';
 import { radius, space, useTheme } from '../../src/theme';
 
 type Metric = 'e1rm' | 'top' | 'volume' | 'reps';
@@ -32,7 +31,7 @@ const LEVEL_METRICS: typeof WEIGHT_METRICS = [
   { key: 'reps', label: 'Total reps', unit: 'reps', help: 'Total reps across all sets in the session.' },
 ];
 
-/** How many rows the Sessions and Recent workouts previews show before "See all". */
+/** How many sessions the preview shows before "See all". */
 const PREVIEW = 5;
 
 export default function ProgressScreen() {
@@ -43,8 +42,8 @@ export default function ProgressScreen() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [stats, setStats] = useState<ExerciseSessionStats[]>([]);
   const [metric, setMetric] = useState<Metric>('e1rm');
-  const [history, setHistory] = useState<WorkoutSummary[]>([]);
-  const [historyCount, setHistoryCount] = useState(0);
+  // Bumped every time the tab gains focus: tells the chart and the overview cards to reload
+  const [focusKey, setFocusKey] = useState(0);
   // Units this exercise has sets in, and which one the chart shows
   const [units, setUnits] = useState<LoadType[]>([]);
   const [loadType, setLoadType] = useState<LoadType>('weight');
@@ -58,8 +57,7 @@ export default function ProgressScreen() {
         const groups = new Map<string, string[]>();
         for (const l of await listExerciseMuscleGroupLinks(db)) groups.set(l.exercise_id, [...(groups.get(l.exercise_id) ?? []), l.name]);
         setGroupsByExercise(groups);
-        setHistory(await listWorkoutHistory(db, PREVIEW));
-        setHistoryCount(await countWorkoutHistory(db));
+        setFocusKey((k) => k + 1);
       })();
     }, [db]),
   );
@@ -75,13 +73,13 @@ export default function ProgressScreen() {
     } else {
       setUnits([]);
     }
-  }, [db, selectedId, history, exercises]);
+  }, [db, selectedId, focusKey, exercises]);
 
   // Chart only the sets logged in one unit at a time, so kg and levels never mix
   useEffect(() => {
     if (selectedId) exerciseStats(db, selectedId, loadType).then(setStats);
     else setStats([]);
-  }, [db, selectedId, loadType, history]);
+  }, [db, selectedId, loadType, focusKey]);
 
   const metrics = loadType === 'level' ? LEVEL_METRICS : WEIGHT_METRICS;
   const m = metrics.find((x) => x.key === metric) ?? metrics[0];
@@ -103,7 +101,8 @@ export default function ProgressScreen() {
   return (
     <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }}>
       <SectionTitle>Overview</SectionTitle>
-      <ConsistencyCard reloadKey={history} />
+      <ConsistencyCard reloadKey={focusKey} />
+      <MuscleBalanceCard reloadKey={focusKey} />
 
       {/* Everything about the chosen exercise lives in one panel, headed by the exercise picker */}
       <SectionTitle>Exercise</SectionTitle>
@@ -199,26 +198,6 @@ export default function ProgressScreen() {
           ) : null}
         </View>
       </View>
-
-      <SectionTitle>Recent workouts</SectionTitle>
-      <View style={{ gap: space.sm }}>
-        {history.map((w) => (
-          <Card key={w.id} onPress={() => router.push(`/workout/${w.id}`)}>
-            <Text style={font.body}>{w.routine_name ?? 'Free workout'}</Text>
-            <Text style={font.dim}>
-              {formatDate(w.started_at)} · {w.set_count} sets · {formatVolume(w.volume)}
-            </Text>
-          </Card>
-        ))}
-      </View>
-      {historyCount > PREVIEW ? (
-        <Button
-          title={`See all ${historyCount} workouts`}
-          variant="secondary"
-          style={{ marginTop: space.md }}
-          onPress={() => router.push('/history')}
-        />
-      ) : null}
     </ScrollView>
   );
 }

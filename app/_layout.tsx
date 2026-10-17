@@ -66,6 +66,7 @@ function ThemedApp() {
         <Stack.Screen name="log/[workoutId]/[exerciseId]" options={{ title: 'Exercise' }} />
         <Stack.Screen name="history" options={{ title: 'History' }} />
         <Stack.Screen name="consistency" options={{ title: 'Consistency' }} />
+        <Stack.Screen name="muscles" options={{ title: 'Muscle balance' }} />
         <Stack.Screen name="settings" options={{ title: 'Settings' }} />
       </Stack>
       <DialogHost />

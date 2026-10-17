@@ -4,7 +4,14 @@ import { router, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import Animated, { useAnimatedRef } from 'react-native-reanimated';
 import Sortable from 'react-native-sortables';
-import { getActiveWorkout, listRoutines, listWorkoutHistory, reorderRoutines, startWorkout } from '../../src/db/repo';
+import {
+  countWorkoutHistory,
+  getActiveWorkout,
+  listRoutines,
+  listWorkoutHistory,
+  reorderRoutines,
+  startWorkout,
+} from '../../src/db/repo';
 import { DragHandle } from '../../src/components/DragHandle';
 import { ElapsedTime } from '../../src/components/ElapsedTime';
 import { countRecordsByWorkout } from '../../src/lib/records';
@@ -21,6 +28,7 @@ export default function TrainScreen() {
   const [recent, setRecent] = useState<WorkoutSummary[]>([]);
   // Record-setting sets per recent workout (shown as 🏆 N)
   const [prCounts, setPrCounts] = useState(new Map<string, number>());
+  const [workoutCount, setWorkoutCount] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
@@ -30,6 +38,7 @@ export default function TrainScreen() {
         const last = await listWorkoutHistory(db, 5);
         setRecent(last);
         setPrCounts(await countRecordsByWorkout(db, last.map((w) => w.id)));
+        setWorkoutCount(await countWorkoutHistory(db));
       })();
     }, [db]),
   );
@@ -129,6 +138,14 @@ export default function TrainScreen() {
           ))}
         </View>
       )}
+      {workoutCount > recent.length ? (
+        <Button
+          title={`See all ${workoutCount} workouts`}
+          variant="secondary"
+          style={{ marginTop: space.md }}
+          onPress={() => router.push('/history')}
+        />
+      ) : null}
     </Animated.ScrollView>
   );
 }

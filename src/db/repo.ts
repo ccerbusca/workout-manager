@@ -853,3 +853,35 @@ export function listTrainingLog(db: SQLiteDatabase): Promise<{ id: string; start
      ORDER BY w.started_at`,
   );
 }
+
+// ───────────────────────── Muscle-group balance ─────────────────────────
+
+/**
+ * Sets per (muscle group, workout), counting each set fully for every group its exercise belongs
+ * to (the exercise's current groups). Includes a workout in progress, so today counts.
+ */
+export function listMuscleGroupSetLog(
+  db: SQLiteDatabase,
+): Promise<{ group_id: string; name: string; started_at: number; sets: number }[]> {
+  return db.getAllAsync(
+    `SELECT mg.id AS group_id, mg.name, w.started_at, COUNT(s.id) AS sets
+     FROM workout_sets s
+     JOIN workouts w ON w.id = s.workout_id AND w.deleted_at IS NULL
+     JOIN exercise_muscle_groups emg ON emg.exercise_id = s.exercise_id AND emg.deleted_at IS NULL
+     JOIN muscle_groups mg ON mg.id = emg.muscle_group_id AND mg.deleted_at IS NULL
+     WHERE s.deleted_at IS NULL
+     GROUP BY mg.id, w.id`,
+  );
+}
+
+/** Muscle groups used by at least one current (not deleted) exercise. */
+export function listUsedMuscleGroups(db: SQLiteDatabase): Promise<MuscleGroup[]> {
+  return db.getAllAsync<MuscleGroup>(
+    `SELECT DISTINCT mg.id, mg.name
+     FROM muscle_groups mg
+     JOIN exercise_muscle_groups emg ON emg.muscle_group_id = mg.id AND emg.deleted_at IS NULL
+     JOIN exercises e ON e.id = emg.exercise_id AND e.deleted_at IS NULL
+     WHERE mg.deleted_at IS NULL
+     ORDER BY mg.name COLLATE NOCASE`,
+  );
+}
