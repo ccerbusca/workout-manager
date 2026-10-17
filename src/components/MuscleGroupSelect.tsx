@@ -1,15 +1,19 @@
 import React, { useState } from 'react';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import type { MuscleGroup } from '../db/types';
 import { radius, space, useTheme } from '../theme';
 
 /**
  * Multi-select dropdown for an exercise's muscle groups.
  *
- * Tapping the field opens the list inline (no modal, so it works inside a ScrollView). Each row
- * toggles a group, and the list stays open until you tap the field again. "Add new" at the bottom
- * creates a group in the shared list (via `onCreate`) and ticks it.
+ * Tapping the field opens the list inline (no modal, so it works inside a ScrollView). The list is
+ * its own scroll area capped at about five rows, so a long list doesn't stretch the page. Each row
+ * toggles a group, and the list stays open until you tap the field again. "Add new" stays pinned
+ * below the list; it creates a group in the shared list (via `onCreate`) and ticks it.
  */
+/** About five rows (each ~47 px); the rest scrolls inside the list. */
+const LIST_MAX_HEIGHT = 240;
+
 export function MuscleGroupSelect(props: {
   options: MuscleGroup[];
   selected: string[];
@@ -65,43 +69,60 @@ export function MuscleGroupSelect(props: {
             overflow: 'hidden',
           }}
         >
-          {props.options.map((o) => {
-            const on = props.selected.includes(o.id);
-            return (
-              <Pressable
-                key={o.id}
-                onPress={() => toggle(o.id)}
-                style={({ pressed }) => ({
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: space.md,
-                  paddingHorizontal: space.md,
-                  paddingVertical: 12,
-                  borderBottomWidth: 1,
-                  borderBottomColor: colors.border,
-                  backgroundColor: pressed ? colors.surfaceAlt : 'transparent',
-                })}
-              >
-                <View
-                  style={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: 6,
-                    borderWidth: 2,
-                    borderColor: on ? colors.accent : colors.textFaint,
-                    backgroundColor: on ? colors.accent : 'transparent',
+          {/* nestedScrollEnabled: on Android a ScrollView inside another only scrolls with it set */}
+          <ScrollView
+            style={{ maxHeight: LIST_MAX_HEIGHT }}
+            nestedScrollEnabled
+            persistentScrollbar
+            keyboardShouldPersistTaps="handled"
+          >
+            {props.options.map((o, i) => {
+              const on = props.selected.includes(o.id);
+              return (
+                <Pressable
+                  key={o.id}
+                  onPress={() => toggle(o.id)}
+                  style={({ pressed }) => ({
+                    flexDirection: 'row',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
+                    gap: space.md,
+                    paddingHorizontal: space.md,
+                    paddingVertical: 12,
+                    borderBottomWidth: i === props.options.length - 1 ? 0 : 1,
+                    borderBottomColor: colors.border,
+                    backgroundColor: pressed ? colors.surfaceAlt : 'transparent',
+                  })}
                 >
-                  {on ? <Text style={{ color: colors.accentText, fontWeight: '900', fontSize: 13 }}>✓</Text> : null}
-                </View>
-                <Text style={font.body}>{o.name}</Text>
-              </Pressable>
-            );
-          })}
+                  <View
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: 6,
+                      borderWidth: 2,
+                      borderColor: on ? colors.accent : colors.textFaint,
+                      backgroundColor: on ? colors.accent : 'transparent',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {on ? <Text style={{ color: colors.accentText, fontWeight: '900', fontSize: 13 }}>✓</Text> : null}
+                  </View>
+                  <Text style={font.body}>{o.name}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.sm }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: space.sm,
+              padding: space.sm,
+              borderTopWidth: 1,
+              borderTopColor: colors.border,
+            }}
+          >
             <TextInput
               value={newName}
               onChangeText={setNewName}
