@@ -465,7 +465,7 @@ export function listSets(db: SQLiteDatabase, workoutId: string, exerciseId: stri
   );
 }
 
-export function listAllSetsForWorkout(db: SQLiteDatabase, workoutId: string): Promise<(WorkoutSet & { name: string; load_type: LoadType })[]> {
+export function listAllSetsForWorkout(db: SQLiteDatabase, workoutId: string): Promise<(WorkoutSet & { name: string })[]> {
   return db.getAllAsync(
     `SELECT s.id, s.workout_id, s.exercise_id, s.set_index, s.weight, s.reps, s.load_type, s.created_at, e.name
      FROM workout_sets s JOIN exercises e ON e.id = s.exercise_id
@@ -503,9 +503,22 @@ export async function updateSet(db: SQLiteDatabase, setId: string, weight: numbe
   );
 }
 
+/** Soft-deletes a set and closes the gap: later sets of that exercise in that workout move up one. */
 export async function deleteSet(db: SQLiteDatabase, setId: string): Promise<void> {
   const t = now();
-  await db.runAsync('UPDATE workout_sets SET deleted_at = ?, updated_at = ? WHERE id = ?', t, t, setId);
+  await db.withTransactionAsync(async () => {
+    const set = await db.getFirstAsync<{ workout_id: string; exercise_id: string; set_index: number }>(
+      'SELECT workout_id, exercise_id, set_index FROM workout_sets WHERE id = ? AND deleted_at IS NULL',
+      setId,
+    );
+    if (!set) return;
+    await db.runAsync('UPDATE workout_sets SET deleted_at = ?, updated_at = ? WHERE id = ?', t, t, setId);
+    await db.runAsync(
+      `UPDATE workout_sets SET set_index = set_index - 1, updated_at = ?
+       WHERE workout_id = ? AND exercise_id = ? AND deleted_at IS NULL AND set_index > ?`,
+      t, set.workout_id, set.exercise_id, set.set_index,
+    );
+  });
 }
 
 /**

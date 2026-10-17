@@ -235,6 +235,28 @@ const MIGRATIONS: string[] = [
                      WHERE lower(r2.name) < lower(routines.name)
                         OR (lower(r2.name) = lower(routines.name) AND r2.id < routines.id));
   `,
+
+  // v8 — close gaps in set numbering left by deleted sets ("Set 1, Set 3" -> "Set 1, Set 2").
+  //      From now on deleteSet renumbers as it goes; this fixes sets deleted before that. Each
+  //      live set's new index is its rank within (workout, exercise) by the old index (id breaks
+  //      ties). The ranks go into a temp table first so the UPDATE never reads half-updated rows,
+  //      and only rows whose number actually changes are touched (and get a new updated_at).
+  `
+  CREATE TEMP TABLE _v8_renumber AS
+  SELECT s.id,
+         (SELECT COUNT(*) FROM workout_sets s2
+          WHERE s2.workout_id = s.workout_id AND s2.exercise_id = s.exercise_id AND s2.deleted_at IS NULL
+            AND (s2.set_index < s.set_index OR (s2.set_index = s.set_index AND s2.id < s.id))) + 1 AS new_index
+  FROM workout_sets s
+  WHERE s.deleted_at IS NULL;
+
+  UPDATE workout_sets
+     SET set_index = (SELECT new_index FROM _v8_renumber r WHERE r.id = workout_sets.id),
+         updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+   WHERE id IN (SELECT r.id FROM _v8_renumber r JOIN workout_sets w ON w.id = r.id WHERE w.set_index <> r.new_index);
+
+  DROP TABLE _v8_renumber;
+  `,
 ];
 
 export async function migrate(db: SQLiteDatabase): Promise<void> {

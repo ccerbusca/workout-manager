@@ -6,9 +6,10 @@ import Animated, { useAnimatedRef } from 'react-native-reanimated';
 import Sortable from 'react-native-sortables';
 import { getActiveWorkout, listRoutines, listWorkoutHistory, reorderRoutines, startWorkout } from '../../src/db/repo';
 import { DragHandle } from '../../src/components/DragHandle';
+import { ElapsedTime } from '../../src/components/ElapsedTime';
 import type { Routine, Workout, WorkoutSummary } from '../../src/db/types';
 import { Button, Card, Empty, SectionTitle } from '../../src/components/ui';
-import { formatDate, formatDuration, formatTime, formatVolume } from '../../src/lib/format';
+import { formatDate, formatTime, formatVolume } from '../../src/lib/format';
 import { space, useTheme } from '../../src/theme';
 
 export default function TrainScreen() {
@@ -47,7 +48,7 @@ export default function TrainScreen() {
           <Text style={[font.small, { color: colors.accent, letterSpacing: 1 }]}>IN PROGRESS</Text>
           <Text style={font.h2}>{active.routine_name ?? 'Free workout'}</Text>
           <Text style={font.dim}>
-            Started {formatTime(active.started_at)} · {formatDuration(active.started_at, Date.now())} ago
+            Started {formatTime(active.started_at)} · <ElapsedTime startedAt={active.started_at} suffix=" ago" />
           </Text>
           <Button title="Resume workout" big onPress={() => router.push(`/workout/${active.id}`)} />
         </Card>

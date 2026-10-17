@@ -14,6 +14,7 @@ import {
   previousSets,
   setExerciseLoadType,
 } from '../../src/db/repo';
+import { ElapsedTime } from '../../src/components/ElapsedTime';
 import { RestTimerBar } from '../../src/components/RestTimer';
 import type { LoadType, Workout, WorkoutExercise, WorkoutSet } from '../../src/db/types';
 import { ExercisePicker } from '../../src/components/ExercisePicker';
@@ -87,13 +88,6 @@ function WorkoutOverview({
   const [rows, setRows] = useState<OverviewRow[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [leaving, setLeaving] = useState(false);
-  const [, setTick] = useState(0);
-
-  // Re-render every 30 s so the elapsed time stays fresh
-  useEffect(() => {
-    const t = setInterval(() => setTick((n) => n + 1), 30_000);
-    return () => clearInterval(t);
-  }, []);
 
   const load = useCallback(async () => {
     const list = await listWorkoutExercises(db, workout.id);
@@ -183,9 +177,13 @@ function WorkoutOverview({
       />
       <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2, gap: space.sm }}>
         <Text style={[font.dim, { marginBottom: space.xs }]}>
-          {isFinished
-            ? `${formatDate(workout.started_at)} · ${formatTime(workout.started_at)} · ${formatDuration(workout.started_at, workout.ended_at ?? workout.started_at)}`
-            : `Started ${formatTime(workout.started_at)} · ${formatDuration(workout.started_at, Date.now())}`}
+          {isFinished ? (
+            `${formatDate(workout.started_at)} · ${formatTime(workout.started_at)} · ${formatDuration(workout.started_at, workout.ended_at ?? workout.started_at)}`
+          ) : (
+            <>
+              Started {formatTime(workout.started_at)} · <ElapsedTime startedAt={workout.started_at} />
+            </>
+          )}
         </Text>
 
         {!isFinished ? <RestTimerBar /> : null}
@@ -314,7 +312,7 @@ function UnitToggle(props: { value: LoadType; onChange: (v: LoadType) => void })
 function WorkoutSummaryView({ workout, onEdit }: { workout: Workout; onEdit: () => void }) {
   const { font } = useTheme();
   const db = useSQLiteContext();
-  const [rows, setRows] = useState<(WorkoutSet & { name: string; load_type: LoadType })[] | null>(null);
+  const [rows, setRows] = useState<(WorkoutSet & { name: string })[] | null>(null);
 
   useEffect(() => {
     listAllSetsForWorkout(db, workout.id).then(setRows);
@@ -323,9 +321,9 @@ function WorkoutSummaryView({ workout, onEdit }: { workout: Workout; onEdit: () 
   if (!rows) return <Loading />;
 
   // Group sets by exercise, preserving the order they were first done
-  const byExercise = new Map<string, { name: string; load_type: LoadType; sets: WorkoutSet[] }>();
+  const byExercise = new Map<string, { name: string; sets: WorkoutSet[] }>();
   for (const r of rows) {
-    const g = byExercise.get(r.exercise_id) ?? { name: r.name, load_type: r.load_type, sets: [] };
+    const g = byExercise.get(r.exercise_id) ?? { name: r.name, sets: [] };
     g.sets.push(r);
     byExercise.set(r.exercise_id, g);
   }
