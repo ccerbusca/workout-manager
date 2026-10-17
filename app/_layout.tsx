@@ -7,6 +7,7 @@ import { migrate } from '../src/db/migrations';
 import { seedIfEmpty } from '../src/db/repo';
 import { ThemeProvider, useTheme } from '../src/theme';
 import { DialogHost } from '../src/components/Dialog';
+import { OverlayHost } from '../src/components/Overlay';
 import { RestTimerProvider } from '../src/lib/restTimer';
 
 async function initDb(db: SQLiteDatabase) {
@@ -69,6 +70,8 @@ function ThemedApp() {
         <Stack.Screen name="muscles" options={{ title: 'Muscle balance' }} />
         <Stack.Screen name="settings" options={{ title: 'Settings' }} />
       </Stack>
+      {/* Same-window overlay above the navigator (used by the Progress exercise dropdown) */}
+      <OverlayHost />
       <DialogHost />
     </NavigationThemeProvider>
   );
