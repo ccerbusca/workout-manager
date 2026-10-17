@@ -14,6 +14,7 @@ import { ExerciseDropdown } from '../../src/components/ExerciseDropdown';
 import { MuscleBalanceCard } from '../../src/components/MuscleBalance';
 import { LineChart, type ChartPoint } from '../../src/components/LineChart';
 import { RecordsCard } from '../../src/components/RecordsCard';
+import { TrendsCard } from '../../src/components/TrendsCard';
 import { Button, Empty, SectionTitle, Segmented } from '../../src/components/ui';
 import { formatDate, formatLoad, formatShortDate } from '../../src/lib/format';
 import { radius, space, useTheme } from '../../src/theme';
@@ -103,6 +104,7 @@ export default function ProgressScreen() {
       <SectionTitle>Overview</SectionTitle>
       <ConsistencyCard reloadKey={focusKey} />
       <MuscleBalanceCard reloadKey={focusKey} />
+      <TrendsCard reloadKey={focusKey} />
 
       {/* Everything about the chosen exercise lives in one panel, headed by the exercise picker */}
       <SectionTitle>Exercise</SectionTitle>

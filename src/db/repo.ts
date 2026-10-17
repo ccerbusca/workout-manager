@@ -885,3 +885,25 @@ export function listUsedMuscleGroups(db: SQLiteDatabase): Promise<MuscleGroup[]>
      ORDER BY mg.name COLLATE NOCASE`,
   );
 }
+
+// ───────────────────────── Workout trends ─────────────────────────
+
+/**
+ * Every finished workout with its totals, oldest first: set count, kg volume (weight × reps of kg
+ * sets only), and created_at, which tells live-tracked workouts (created when started) apart from
+ * imported or back-filled ones (created later, with made-up times).
+ */
+export function listWorkoutTrendLog(db: SQLiteDatabase): Promise<
+  { id: string; started_at: number; ended_at: number; created_at: number; set_count: number; volume: number }[]
+> {
+  return db.getAllAsync(
+    `SELECT w.id, w.started_at, w.ended_at, w.created_at,
+            COUNT(s.id) AS set_count,
+            COALESCE(SUM(CASE WHEN s.load_type = 'weight' THEN s.weight * s.reps ELSE 0 END), 0) AS volume
+     FROM workouts w
+     LEFT JOIN workout_sets s ON s.workout_id = w.id AND s.deleted_at IS NULL
+     WHERE w.deleted_at IS NULL AND w.ended_at IS NOT NULL
+     GROUP BY w.id
+     ORDER BY w.started_at`,
+  );
+}
