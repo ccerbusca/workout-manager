@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, Vibration, View } from 'react-native';
 import Animated, { FadeInDown, FadeOut } from 'react-native-reanimated';
-import { Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import {
   addSet,
@@ -25,7 +25,8 @@ import { radius, space, useTheme } from '../../../src/theme';
 
 /**
  * Logging screen for one exercise in a workout: last time, today's sets, weight/reps steppers and
- * the rest timer. Opened from the workout overview; going back returns there.
+ * the rest timer. Opened from the workout overview; "Finish exercise" (or back) returns there.
+ * Every set is saved the moment it's logged, so leaving never needs confirming.
  */
 export default function ExerciseLogScreen() {
   const { colors, font } = useTheme();
@@ -255,6 +256,14 @@ export default function ExerciseLogScreen() {
           </View>
           <Button title={editingSetId ? 'Update set' : `Log set ${sets.length + 1}`} big onPress={logSet} />
         </Card>
+
+        {/* Sets are saved as you log them; this just makes "done with this exercise" an explicit step */}
+        <Button
+          title={isFinished ? 'Done' : 'Finish exercise'}
+          variant="secondary"
+          style={{ marginTop: space.md }}
+          onPress={() => router.back()}
+        />
       </ScrollView>
     </KeyboardAvoidingView>
   );
