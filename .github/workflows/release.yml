@@ -1,0 +1,81 @@
+# Builds the Android APK on EAS and publishes it as a GitHub Release.
+#
+# Trigger: push a tag matching the app version, e.g.
+#   (bump "version" in app.json, commit)  git tag v0.2.0 && git push origin v0.2.0
+#
+# The APK is built by EAS with the project's EAS-managed keystore (the same one as every APK so far),
+# so a release installs over the existing app without losing data. EAS bumps the Android
+# versionCode on each build (eas.json: preview.autoIncrement, appVersionSource: remote).
+#
+# Needs one repo secret: EXPO_TOKEN (an expo.dev access token). The release itself uses the
+# built-in GITHUB_TOKEN.
+
+name: Release APK
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # create the release and upload the APK
+
+# Never build the same tag twice in parallel
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches app.json
+        run: |
+          APP_VERSION="v$(node -p "require('./app.json').expo.version")"
+          if [ "$APP_VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match app.json version $APP_VERSION. Bump app.json or fix the tag."
+            exit 1
+          fi
+
+      - name: Check the Expo token is set
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::Missing repository secret EXPO_TOKEN (Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: expo/expo-github-action@v9
+        with:
+          eas-version: latest
+          packager: npm
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the APK on EAS
+        # --wait blocks until the cloud build finishes; --json prints the result (logs go to stderr)
+        run: eas build --platform android --profile preview --non-interactive --wait --json > build.json
+
+      - name: Download the APK
+        run: |
+          URL="$(jq -r '.[0].artifacts.buildUrl' build.json)"
+          if [ -z "$URL" ] || [ "$URL" = "null" ]; then
+            echo "::error::EAS build finished without an APK URL"; cat build.json; exit 1
+          fi
+          curl -fsSL -o "workout-manager-$GITHUB_REF_NAME.apk" "$URL"
+
+      - name: Publish the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Workout Manager ${{ github.ref_name }}
+          files: workout-manager-${{ github.ref_name }}.apk
+          generate_release_notes: true
