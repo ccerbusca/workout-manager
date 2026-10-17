@@ -3,16 +3,16 @@
     "name": "Workout Manager",
     "slug": "workout-manager",
     "scheme": "workoutmanager",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0F1115",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.cristian.workoutmanager"
+      "bundleIdentifier": "io.github.ccerbusca.workoutmanager"
     },
     "android": {
-      "package": "com.cristian.workoutmanager",
+      "package": "io.github.ccerbusca.workoutmanager",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0F1115"
