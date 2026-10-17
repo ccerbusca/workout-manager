@@ -52,10 +52,6 @@ export function formatLoad(v: number, t: LoadType): string {
   return t === 'level' ? `level ${formatWeight(v)}` : `${formatWeight(v)} kg`;
 }
 
-/** Compact set notation: "80×8" or "L7×12" */
-export function formatSetShort(v: number, reps: number, t: LoadType): string {
-  return `${t === 'level' ? 'L' : ''}${formatWeight(v)}×${reps}`;
-}
 
 export function formatVolume(v: number): string {
   if (v >= 10000) return `${(v / 1000).toFixed(1)}t`;
@@ -66,4 +62,37 @@ export function formatVolume(v: number): string {
 export function parseNumber(text: string): number | null {
   const n = Number(text.replace(',', '.').trim());
   return text.trim() !== '' && Number.isFinite(n) ? n : null;
+}
+
+/** "today", "yesterday", "5 days ago", "3 weeks ago", "4 months ago", "2 years ago" (by calendar day). */
+export function formatAgo(ms: number, now = Date.now()): string {
+  const day = (t: number) => {
+    const d = new Date(t);
+    return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86_400_000;
+  };
+  const days = Math.round(day(now) - day(ms));
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? '' : 's'} ago`;
+  if (days < 14) return plural(days, 'day');
+  if (days < 60) return plural(Math.round(days / 7), 'week');
+  if (days < 365) return plural(Math.round(days / 30), 'month');
+  return plural(Math.round(days / 365), 'year');
+}
+
+/**
+ * One-line summary of a past session for an exercise:
+ * "26 Jun · 3 sets · best 16 kg × 6 reps", or "4 Jun · 1 set · level 3 × 6 reps".
+ * "Best" is the heaviest set (most reps on a tie), preferring sets in `unit` if there are any.
+ */
+export function formatSessionSummary(
+  startedAt: number,
+  sets: { weight: number; reps: number; load_type: LoadType }[],
+  unit: LoadType,
+): string {
+  const pool = sets.some((s) => s.load_type === unit) ? sets.filter((s) => s.load_type === unit) : sets;
+  const best = pool.reduce((a, b) => (b.weight > a.weight || (b.weight === a.weight && b.reps > a.reps) ? b : a), pool[0]);
+  const count = `${sets.length} set${sets.length === 1 ? '' : 's'}`;
+  const top = best ? `${sets.length > 1 ? 'best ' : ''}${formatLoad(best.weight, best.load_type)} × ${best.reps} rep${best.reps === 1 ? '' : 's'}` : '';
+  return [formatDayMonth(startedAt), count, top].filter(Boolean).join(' · ');
 }

@@ -145,6 +145,10 @@ async function insertExercise(db: SQLiteDatabase, name: string, muscleGroupIds: 
   return id;
 }
 
+export function getExercise(db: SQLiteDatabase, id: string): Promise<{ id: string; name: string; load_type: LoadType } | null> {
+  return db.getFirstAsync('SELECT id, name, load_type FROM exercises WHERE id = ?', id);
+}
+
 export async function getExerciseName(db: SQLiteDatabase, id: string): Promise<string | null> {
   const row = await db.getFirstAsync<{ name: string }>('SELECT name FROM exercises WHERE id = ?', id);
   return row?.name ?? null;

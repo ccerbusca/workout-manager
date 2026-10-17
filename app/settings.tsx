@@ -1,5 +1,5 @@
-import React from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import Constants from 'expo-constants';
@@ -10,14 +10,16 @@ import { SectionTitle } from '../src/components/ui';
 import { backupFileName, fromLocalIso, parseBackup } from '../src/lib/backup';
 import { pickTextFile, shareJsonFile } from '../src/lib/backupFiles';
 import { formatDayMonth } from '../src/lib/format';
+import { prefs } from '../src/lib/prefs';
 import { radius, space, THEMES, type ThemeDef, useTheme } from '../src/theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
-/** App settings: appearance (theme) and backup (JSON export / import). Opened from the gear in the tab header. */
+/** App settings: theme, rest timer and backup (JSON export / import). Opened from the gear in the tab header. */
 export default function SettingsScreen() {
   const { colors, font, id: themeId, setTheme } = useTheme();
   const db = useSQLiteContext();
+  const [restAutoStart, setRestAutoStart] = useState(prefs.getRestAutoStart);
 
   const exportData = async () => {
     try {
@@ -76,6 +78,36 @@ export default function SettingsScreen() {
         {THEMES.map((t) => (
           <ThemeSwatch key={t.id} theme={t} active={t.id === themeId} onPress={() => setTheme(t.id)} />
         ))}
+      </View>
+
+      <SectionTitle>Rest timer</SectionTitle>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: space.md,
+          padding: space.lg,
+          borderRadius: radius.lg,
+          borderWidth: 1,
+          borderColor: colors.border,
+          backgroundColor: colors.surface,
+        }}
+      >
+        <Ionicons name="timer-outline" size={22} color={colors.accent} />
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={[font.body, { fontWeight: '700' }]}>Start after each set</Text>
+          <Text style={font.small}>Begins the rest countdown when you log a set. You can always start it by hand.</Text>
+        </View>
+        <Switch
+          value={restAutoStart}
+          onValueChange={(on) => {
+            setRestAutoStart(on);
+            prefs.setRestAutoStart(on);
+          }}
+          trackColor={{ false: colors.surfaceAlt, true: colors.accent }}
+          thumbColor={colors.text}
+          ios_backgroundColor={colors.surfaceAlt}
+        />
       </View>
 
       <SectionTitle>Backup</SectionTitle>

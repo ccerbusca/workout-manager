@@ -1,44 +1,30 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  useWindowDimensions,
-  View,
-  type GestureResponderEvent,
-} from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { Dialog } from '../../src/components/Dialog';
-import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
+import { usePreventRemove } from 'expo-router/react-navigation';
 import { useSQLiteContext } from 'expo-sqlite';
 import {
   addExerciseToWorkout,
-  addSet,
-  deleteSet,
   deleteWorkout,
   finishWorkout,
   getWorkout,
   listAllSetsForWorkout,
-  listSets,
   listWorkoutExercises,
   previousSets,
   setExerciseLoadType,
-  updateSet,
 } from '../../src/db/repo';
-import { UnitMenu, unitMenuHitTest, type UnitMenuState } from '../../src/components/UnitMenu';
+import { RestTimerBar } from '../../src/components/RestTimer';
 import type { LoadType, Workout, WorkoutExercise, WorkoutSet } from '../../src/db/types';
 import { ExercisePicker } from '../../src/components/ExercisePicker';
-import { Button, Card, Empty, Loading, SectionTitle, Stepper } from '../../src/components/ui';
+import { Button, Card, Empty, Loading, SectionTitle } from '../../src/components/ui';
 import {
   formatDate,
   formatDuration,
   formatLoad,
-  formatSetShort,
+  formatSessionSummary,
   formatTime,
   formatVolume,
-  formatWeight,
-  parseNumber,
 } from '../../src/lib/format';
 import { radius, space, useTheme } from '../../src/theme';
 
@@ -61,7 +47,7 @@ export default function WorkoutScreen() {
   return workout.ended_at && !editing ? (
     <WorkoutSummaryView workout={workout} onEdit={() => setEditing(true)} />
   ) : (
-    <ActiveWorkout
+    <WorkoutOverview
       workout={workout}
       onFinished={reload}
       onDone={() => {
@@ -72,13 +58,20 @@ export default function WorkoutScreen() {
   );
 }
 
-// ─────────────────────────── Active workout ───────────────────────────
+// ─────────────────────────── Workout overview ───────────────────────────
+
+interface OverviewRow extends WorkoutExercise {
+  /** The most recent earlier workout with this exercise, and its sets. */
+  last: { started_at: number; sets: WorkoutSet[] } | null;
+}
 
 /**
- * Logging screen. For a workout in progress it has a live timer and Finish/Discard. For a finished
+ * The exercises in a workout. Each row shows sets done, last time, and a KG | LVL switch; tapping a
+ * row opens that exercise's logging screen (app/log/...). For a workout in progress it has a live
+ * timer, the rest bar and Finish/Discard, and going back asks whether to discard it. For a finished
  * workout (a past one being logged, or one being edited) it has a "Done" button instead.
  */
-function ActiveWorkout({
+function WorkoutOverview({
   workout,
   onFinished,
   onDone,
@@ -89,26 +82,12 @@ function ActiveWorkout({
 }) {
   const { colors, font } = useTheme();
   const db = useSQLiteContext();
+  const navigation = useNavigation();
   const isFinished = workout.ended_at != null;
-  const [exercises, setExercises] = useState<WorkoutExercise[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [sets, setSets] = useState<WorkoutSet[]>([]);
-  const [prev, setPrev] = useState<{ started_at: number; sets: WorkoutSet[] } | null>(null);
-  const [weight, setWeight] = useState('');
-  const [reps, setReps] = useState('');
-  const [editingSetId, setEditingSetId] = useState<string | null>(null);
+  const [rows, setRows] = useState<OverviewRow[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const [, setTick] = useState(0);
-  // Long-press kg/level menu. `origin` is the root view's page position, for placing the overlay.
-  const [unitMenu, setUnitMenu] = useState<(UnitMenuState & { exerciseId: string }) | null>(null);
-  const [unitHover, setUnitHover] = useState<LoadType | null>(null);
-  const rootRef = useRef<View>(null);
-  const chipRefs = useRef(new Map<string, View>());
-  const [origin, setOrigin] = useState({ x: 0, y: 0 });
-  const { width: screenWidth } = useWindowDimensions();
-
-  const selected = exercises.find((e) => e.exercise_id === selectedId);
-  const loadType: LoadType = selected?.load_type ?? 'weight';
 
   // Re-render every 30 s so the elapsed time stays fresh
   useEffect(() => {
@@ -116,100 +95,51 @@ function ActiveWorkout({
     return () => clearInterval(t);
   }, []);
 
-  const loadExercises = useCallback(async () => {
+  const load = useCallback(async () => {
     const list = await listWorkoutExercises(db, workout.id);
-    setExercises(list);
-    return list;
-  }, [db, workout.id]);
+    const withLast = await Promise.all(
+      list.map(async (e) => ({
+        ...e,
+        last: await previousSets(db, e.exercise_id, workout.id, workout.started_at),
+      })),
+    );
+    setRows(withLast);
+  }, [db, workout.id, workout.started_at]);
 
-  // Load the exercise list once; auto-select the first exercise
-  useEffect(() => {
-    loadExercises().then((list) => {
-      if (list.length > 0) setSelectedId((cur) => cur ?? list[0].exercise_id);
-    });
-  }, [loadExercises]);
+  // Reload whenever we come back from an exercise screen (set counts change there)
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
 
-  // When the selected exercise (or its unit) changes, load its sets + last session, and prefill inputs
-  useEffect(() => {
-    if (!selectedId) return;
-    let cancelled = false;
-    (async () => {
-      const [current, last] = await Promise.all([
-        listSets(db, workout.id, selectedId),
-        previousSets(db, selectedId, workout.id, workout.started_at),
-      ]);
-      if (cancelled) return;
-      setSets(current);
-      setPrev(last);
-      setEditingSetId(null);
-      prefill(current, last?.sets ?? []);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [db, workout.id, workout.started_at, selectedId, loadType]);
-
-  /** Suggest the next set: repeat the last one done today, else match last session's equivalent set. */
-  const prefill = (current: WorkoutSet[], last: WorkoutSet[]) => {
-    // Only suggest from sets in the exercise's current unit (kg vs level)
-    const cur = current.filter((s) => s.load_type === loadType);
-    const prevSame = last.filter((s) => s.load_type === loadType);
-    const ref = cur[cur.length - 1] ?? prevSame[cur.length] ?? prevSame[prevSame.length - 1];
-    setWeight(ref ? formatWeight(ref.weight) : '');
-    setReps(ref ? String(ref.reps) : '');
-  };
-
-  const refreshSets = async () => {
-    if (!selectedId) return;
-    const current = await listSets(db, workout.id, selectedId);
-    setSets(current);
-    loadExercises();
-    return current;
-  };
-
-  const logSet = async () => {
-    if (!selectedId) return;
-    const w = parseNumber(weight);
-    const r = parseNumber(reps);
-    if (w == null || r == null || r <= 0) {
-      Dialog.alert('Check your numbers', 'Enter a weight or level (0 for bodyweight) and at least 1 rep.');
-      return;
-    }
-    if (editingSetId) {
-      await updateSet(db, editingSetId, w, Math.round(r));
-      setEditingSetId(null);
-    } else {
-      await addSet(db, workout.id, selectedId, w, Math.round(r));
-    }
-    const current = await refreshSets();
-    if (current) prefill(current, prev?.sets ?? []);
-  };
-
-  const onSetPress = (s: WorkoutSet) => {
-    if (editingSetId === s.id) {
-      setEditingSetId(null);
-      prefill(sets, prev?.sets ?? []);
-      return;
-    }
-    setEditingSetId(s.id);
-    setWeight(formatWeight(s.weight));
-    setReps(String(s.reps));
-  };
-
-  const onSetLongPress = (s: WorkoutSet) => {
-    Dialog.alert(`Delete set ${s.set_index}?`, `${formatLoad(s.weight, s.load_type)} × ${s.reps}`, [
-      { text: 'Cancel', style: 'cancel' },
+  // Going back from a workout in progress asks first (system back, header arrow and gestures alike)
+  usePreventRemove(!isFinished && !leaving, ({ data }) => {
+    Dialog.alert('Leave this workout?', 'Pause it to pick it up later from the Train tab.', [
+      { text: 'Stay', style: 'cancel' },
+      { text: 'Pause', onPress: () => navigation.dispatch(data.action) },
       {
-        text: 'Delete',
+        text: 'Discard',
         style: 'destructive',
         onPress: async () => {
-          await deleteSet(db, s.id);
-          if (editingSetId === s.id) setEditingSetId(null);
-          refreshSets();
+          await deleteWorkout(db, workout.id);
+          navigation.dispatch(data.action);
         },
       },
     ]);
+  });
+
+  // Leaving on purpose (Discard button): lift the guard first, then go back once it has re-rendered
+  useEffect(() => {
+    if (leaving) router.back();
+  }, [leaving]);
+
+  const setUnit = async (exerciseId: string, lt: LoadType) => {
+    await setExerciseLoadType(db, exerciseId, lt);
+    load();
   };
+
+  const openExercise = (exerciseId: string) => router.push(`/log/${workout.id}/${exerciseId}`);
 
   const finish = () => {
     Dialog.alert('Finish workout?', undefined, [
@@ -232,241 +162,150 @@ function ActiveWorkout({
         style: 'destructive',
         onPress: async () => {
           await deleteWorkout(db, workout.id);
-          router.back();
+          setLeaving(true);
         },
       },
     ]);
   };
 
-  const openUnitMenu = (exerciseId: string, current: LoadType, e: GestureResponderEvent) => {
-    setSelectedId(exerciseId);
-    setUnitHover(null);
-    const pageX = e.nativeEvent.pageX;
-    // Open the menu just below the pressed chip, measured in the same page coordinates as touches
-    chipRefs.current.get(exerciseId)?.measure((_x, _y, _w, h, _px, pageY) =>
-      setUnitMenu({ exerciseId, current, x: pageX, y: pageY + h }),
-    );
-  };
-
-  const pickUnit = async (lt: LoadType) => {
-    const menu = unitMenu;
-    setUnitMenu(null);
-    setUnitHover(null);
-    if (!menu || lt === menu.current) return;
-    await setExerciseLoadType(db, menu.exerciseId, lt);
-    await loadExercises(); // the new unit re-runs the load/prefill effect
-  };
-
-  // The long-press touch is still down when the menu opens: follow it so the user can slide onto an option
-  const onChipsTouchMove = (e: GestureResponderEvent) => {
-    if (!unitMenu) return;
-    const hit = unitMenuHitTest(unitMenu, screenWidth, e.nativeEvent.pageX, e.nativeEvent.pageY);
-    if (hit !== unitHover) setUnitHover(hit);
-  };
-  const onChipsTouchEnd = () => {
-    if (unitMenu && unitHover) pickUnit(unitHover);
-  };
-
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View
-        ref={rootRef}
-        style={{ flex: 1 }}
-        onLayout={() => rootRef.current?.measure((_x, _y, _w, _h, pageX, pageY) => setOrigin({ x: pageX, y: pageY }))}
-      >
-        <Stack.Screen
-          options={{
-            title: workout.routine_name ?? 'Free workout',
-            headerRight: () =>
-              isFinished ? (
-                <Button title="Done" variant="ghost" onPress={onDone} />
-              ) : (
-                <Button title="Finish" variant="ghost" onPress={finish} />
-              ),
-          }}
-        />
-        <ScrollView
-          contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }}
-          keyboardShouldPersistTaps="handled"
-          scrollEnabled={!unitMenu} // otherwise sliding to an option scrolls the page and cancels the touch
-        >
-          <Text style={font.dim}>
-            {isFinished
-              ? `${formatDate(workout.started_at)} · ${formatTime(workout.started_at)} · ${formatDuration(workout.started_at, workout.ended_at ?? workout.started_at)}`
-              : `Started ${formatTime(workout.started_at)} · ${formatDuration(workout.started_at, Date.now())}`}
-          </Text>
+    <View style={{ flex: 1 }}>
+      <Stack.Screen
+        options={{
+          title: workout.routine_name ?? 'Free workout',
+          headerRight: () =>
+            isFinished ? (
+              <Button title="Done" variant="ghost" onPress={onDone} />
+            ) : (
+              <Button title="Finish" variant="ghost" onPress={finish} />
+            ),
+        }}
+      />
+      <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2, gap: space.sm }}>
+        <Text style={[font.dim, { marginBottom: space.xs }]}>
+          {isFinished
+            ? `${formatDate(workout.started_at)} · ${formatTime(workout.started_at)} · ${formatDuration(workout.started_at, workout.ended_at ?? workout.started_at)}`
+            : `Started ${formatTime(workout.started_at)} · ${formatDuration(workout.started_at, Date.now())}`}
+        </Text>
 
-          {/* Exercise chooser */}
-          <SectionTitle>Exercise</SectionTitle>
-          <View
-            style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}
-            onTouchMove={onChipsTouchMove}
-            onTouchEnd={onChipsTouchEnd}
-          >
-            {exercises.map((e) => {
-              const isSel = e.exercise_id === selectedId;
-              return (
-                <Pressable
-                  key={e.id}
-                  onPress={() => setSelectedId(e.exercise_id)}
-                  ref={(v) => {
-                    if (v) chipRefs.current.set(e.exercise_id, v);
-                    else chipRefs.current.delete(e.exercise_id);
-                  }}
-                  onLongPress={(ev) => openUnitMenu(e.exercise_id, e.load_type, ev)}
-                  style={{
-                    paddingHorizontal: space.md,
-                    paddingVertical: 10,
-                    borderRadius: radius.lg,
-                    borderWidth: 1,
-                    borderColor: isSel ? colors.accent : colors.border,
-                    backgroundColor: isSel ? colors.accent : e.set_count > 0 ? colors.surfaceAlt : colors.surface,
-                  }}
-                >
-                  <Text style={{ color: isSel ? colors.accentText : colors.text, fontWeight: '600' }}>
-                    {e.name}
-                    {e.load_type === 'level' ? '  · L' : ''}
-                    {e.set_count > 0 ? `  ✓${e.set_count}` : ''}
-                  </Text>
-                </Pressable>
-              );
+        {!isFinished ? <RestTimerBar /> : null}
+
+        {rows.length === 0 ? <Empty title="No exercises yet" hint="Add one to start logging." /> : null}
+        {rows.map((e) => (
+          <Pressable
+            key={e.id}
+            onPress={() => openExercise(e.exercise_id)}
+            style={({ pressed }) => ({
+              borderRadius: radius.lg,
+              borderWidth: 1,
+              borderColor: e.set_count > 0 ? colors.accent : colors.border,
+              backgroundColor: pressed ? colors.surfaceAlt : colors.surface,
+              paddingHorizontal: space.lg,
+              paddingVertical: space.md,
+              gap: space.xs,
             })}
-            <Pressable
-              onPress={() => setPickerOpen(true)}
-              style={{
-                paddingHorizontal: space.md,
-                paddingVertical: 10,
-                borderRadius: radius.lg,
-                borderWidth: 1,
-                borderStyle: 'dashed',
-                borderColor: colors.textFaint,
-              }}
-            >
-              <Text style={{ color: colors.textDim, fontWeight: '600' }}>+ Add</Text>
-            </Pressable>
-          </View>
-          {exercises.length > 0 ? (
-            <Text style={[font.small, { marginTop: space.xs }]}>Long-press an exercise to switch kg / level</Text>
-          ) : null}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+              <Text style={[font.h2, { flex: 1, fontSize: 18 }]} numberOfLines={1}>
+                {e.name}
+              </Text>
+              {e.set_count > 0 ? (
+                <Text style={{ color: colors.accent, fontWeight: '800', fontVariant: ['tabular-nums'] }}>✓{e.set_count}</Text>
+              ) : null}
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+              {/* Shrinks a little on narrow screens instead of wrapping, so the card stays two lines tall */}
+              <Text style={[font.dim, { flex: 1, fontSize: 13 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                {e.last?.sets.length ? `Last: ${formatSessionSummary(e.last.started_at, e.last.sets, e.load_type)}` : 'First time'}
+              </Text>
+              <UnitToggle value={e.load_type} onChange={(lt) => setUnit(e.exercise_id, lt)} />
+              <Text style={{ color: colors.textFaint, fontSize: 22, marginTop: -2 }}>›</Text>
+            </View>
+          </Pressable>
+        ))}
 
-          {!selected ? (
-            <Empty title="Add an exercise to start logging" />
+        <Pressable
+          onPress={() => setPickerOpen(true)}
+          style={({ pressed }) => ({
+            paddingVertical: space.md,
+            borderRadius: radius.lg,
+            borderWidth: 1,
+            borderStyle: 'dashed',
+            borderColor: colors.textFaint,
+            alignItems: 'center',
+            opacity: pressed ? 0.7 : 1,
+          })}
+        >
+          <Text style={{ color: colors.textDim, fontWeight: '700' }}>+ Add exercise</Text>
+        </Pressable>
+
+        <View style={{ gap: space.sm, marginTop: space.lg }}>
+          {isFinished ? (
+            <Button title="Done" variant="secondary" onPress={onDone} />
           ) : (
             <>
-              {/* Previous session */}
-              <SectionTitle>Last time</SectionTitle>
-              {prev ? (
-                <Text style={font.dim}>
-                  {formatDate(prev.started_at)}:{'  '}
-                  <Text style={{ color: colors.text }}>
-                    {prev.sets.map((s) => formatSetShort(s.weight, s.reps, s.load_type)).join('   ')}
-                  </Text>
-                </Text>
-              ) : (
-                <Text style={font.small}>First time logging {selected.name}.</Text>
-              )}
-
-              {/* Logged sets */}
-              <SectionTitle>{isFinished ? 'Sets' : 'Today'}</SectionTitle>
-              {sets.length === 0 ? (
-                <Text style={font.small}>No sets yet.</Text>
-              ) : (
-                <View style={{ gap: space.xs }}>
-                  {sets.map((s) => {
-                    const isEditing = editingSetId === s.id;
-                    return (
-                      <Pressable
-                        key={s.id}
-                        onPress={() => onSetPress(s)}
-                        onLongPress={() => onSetLongPress(s)}
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          paddingVertical: 10,
-                          paddingHorizontal: space.md,
-                          borderRadius: radius.md,
-                          backgroundColor: isEditing ? colors.surfaceAlt : colors.surface,
-                          borderWidth: 1,
-                          borderColor: isEditing ? colors.accent : colors.border,
-                        }}
-                      >
-                        <Text style={[font.dim, { width: 56 }]}>Set {s.set_index}</Text>
-                        <Text style={[font.body, { flex: 1, fontWeight: '700', fontVariant: ['tabular-nums'] }]}>
-                          {formatLoad(s.weight, s.load_type)} × {s.reps}
-                        </Text>
-                        <Text style={font.small}>{isEditing
-                            ? 'editing'
-                            : // Sets added to a past workout were entered later, so their clock time means nothing
-                              !isFinished || s.created_at <= (workout.ended_at ?? 0)
-                              ? formatTime(s.created_at)
-                              : ''}</Text>
-                      </Pressable>
-                    );
-                  })}
-                  <Text style={[font.small, { marginTop: space.xs }]}>Tap a set to edit · long-press to delete</Text>
-                </View>
-              )}
-
-              {/* Input */}
-              <Card style={{ marginTop: space.lg, gap: space.md }}>
-                <View style={{ flexDirection: 'row', gap: space.md }}>
-                  <Stepper
-                    label={loadType === 'level' ? 'level' : 'kg'}
-                    value={weight}
-                    onChange={setWeight}
-                    step={loadType === 'level' ? 1 : 2.5}
-                    decimal={loadType !== 'level'}
-                  />
-                  <Stepper label="reps" value={reps} onChange={setReps} step={1} />
-                </View>
-                <Button
-                  title={editingSetId ? 'Update set' : `Log set ${sets.length + 1}`}
-                  big
-                  onPress={logSet}
-                />
-              </Card>
+              <Button title="Finish workout" onPress={finish} />
+              <Button title="Discard workout" variant="ghost" onPress={discard} />
             </>
           )}
+        </View>
+      </ScrollView>
 
-          <View style={{ gap: space.sm, marginTop: space.xl }}>
-            {isFinished ? (
-              <Button title="Done" variant="secondary" onPress={onDone} />
-            ) : (
-              <>
-                <Button title="Finish workout" variant="secondary" onPress={finish} />
-                <Button title="Discard workout" variant="ghost" onPress={discard} />
-              </>
-            )}
-          </View>
-        </ScrollView>
+      <ExercisePicker
+        visible={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        excludeIds={rows.map((e) => e.exercise_id)}
+        onPick={async (e) => {
+          setPickerOpen(false);
+          await addExerciseToWorkout(db, workout.id, e.id);
+          openExercise(e.id);
+        }}
+      />
+    </View>
+  );
+}
 
-        <ExercisePicker
-          visible={pickerOpen}
-          onClose={() => setPickerOpen(false)}
-          excludeIds={exercises.map((e) => e.exercise_id)}
-          onPick={async (e) => {
-            setPickerOpen(false);
-            await addExerciseToWorkout(db, workout.id, e.id);
-            await loadExercises();
-            setSelectedId(e.id);
-          }}
-        />
-
-        {unitMenu ? (
-          <UnitMenu
-            menu={unitMenu}
-            origin={origin}
-            screenWidth={screenWidth}
-            hover={unitHover}
-            onPick={pickUnit}
-            onClose={() => {
-              setUnitMenu(null);
-              setUnitHover(null);
+/** Compact KG | LVL switch for an exercise row. Sets keep the unit they were logged in. */
+function UnitToggle(props: { value: LoadType; onChange: (v: LoadType) => void }) {
+  const { colors } = useTheme();
+  const options: { value: LoadType; label: string }[] = [
+    { value: 'weight', label: 'KG' },
+    { value: 'level', label: 'LVL' },
+  ];
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        borderRadius: radius.sm,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.surfaceAlt,
+        padding: 2,
+      }}
+    >
+      {options.map((o) => {
+        const active = o.value === props.value;
+        return (
+          <Pressable
+            key={o.value}
+            onPress={() => !active && props.onChange(o.value)}
+            hitSlop={6}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: active }}
+            style={{
+              paddingHorizontal: 10,
+              paddingVertical: 5,
+              borderRadius: radius.sm - 2,
+              backgroundColor: active ? colors.accent : 'transparent',
             }}
-          />
-        ) : null}
-      </View>
-    </KeyboardAvoidingView>
+          >
+            <Text style={{ color: active ? colors.accentText : colors.textDim, fontWeight: '800', fontSize: 12 }}>
+              {o.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
   );
 }
 

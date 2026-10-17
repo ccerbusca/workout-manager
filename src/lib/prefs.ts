@@ -1,0 +1,35 @@
+import { Storage } from 'expo-sqlite/kv-store';
+
+/*
+ * Small device-local preferences, kept in expo-sqlite's key-value store (not the workouts DB,
+ * so no migrations and not part of backups). Reads are synchronous so they're usable during render.
+ */
+
+function read(key: string): string | null {
+  try {
+    return Storage.getItemSync(key);
+  } catch {
+    return null;
+  }
+}
+
+function write(key: string, value: string): void {
+  try {
+    Storage.setItemSync(key, value);
+  } catch {
+    // Not saved: the value still applies until the app restarts
+  }
+}
+
+export const prefs = {
+  /** Start the rest timer automatically after logging a set. Default on. */
+  getRestAutoStart: (): boolean => read('rest.autoStart') !== 'false',
+  setRestAutoStart: (on: boolean) => write('rest.autoStart', String(on)),
+
+  /** Last chosen rest length in seconds. Default 90. */
+  getRestSeconds: (): number => {
+    const n = Number(read('rest.seconds'));
+    return Number.isFinite(n) && n >= 5 ? n : 90;
+  },
+  setRestSeconds: (s: number) => write('rest.seconds', String(Math.round(s))),
+};

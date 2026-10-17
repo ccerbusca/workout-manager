@@ -6,6 +6,7 @@ import { migrate } from '../src/db/migrations';
 import { seedIfEmpty } from '../src/db/repo';
 import { ThemeProvider, useTheme } from '../src/theme';
 import { DialogHost } from '../src/components/Dialog';
+import { RestTimerProvider } from '../src/lib/restTimer';
 
 async function initDb(db: SQLiteDatabase) {
   await migrate(db);
@@ -16,7 +17,9 @@ export default function RootLayout() {
   return (
     <ThemeProvider>
       <SQLiteProvider databaseName="workouts.db" onInit={initDb}>
-        <ThemedApp />
+        <RestTimerProvider>
+          <ThemedApp />
+        </RestTimerProvider>
       </SQLiteProvider>
     </ThemeProvider>
   );
@@ -56,6 +59,7 @@ function ThemedApp() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="routine/[id]" options={{ title: 'Edit routine' }} />
         <Stack.Screen name="workout/[id]" options={{ title: 'Workout' }} />
+        <Stack.Screen name="log/[workoutId]/[exerciseId]" options={{ title: 'Exercise' }} />
         <Stack.Screen name="history" options={{ title: 'History' }} />
         <Stack.Screen name="settings" options={{ title: 'Settings' }} />
       </Stack>
