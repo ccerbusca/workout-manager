@@ -218,8 +218,27 @@ export function listRoutines(db: SQLiteDatabase): Promise<Routine[]> {
              WHERE re.routine_id = r.id AND re.deleted_at IS NULL) AS exercise_count
      FROM routines r
      WHERE r.deleted_at IS NULL
-     ORDER BY r.name COLLATE NOCASE`,
+     ORDER BY r.position, r.name COLLATE NOCASE`,
   );
+}
+
+/** Next free routine position: new routines go to the end of the list. */
+async function nextRoutinePosition(db: SQLiteDatabase): Promise<number> {
+  const row = await db.getFirstAsync<{ p: number | null }>('SELECT MAX(position) AS p FROM routines WHERE deleted_at IS NULL');
+  return (row?.p ?? -1) + 1;
+}
+
+/** Saves a new routine order (drag and drop on the Train tab): position = index in `orderedIds`. */
+export async function reorderRoutines(db: SQLiteDatabase, orderedIds: string[]): Promise<void> {
+  const t = now();
+  await db.withTransactionAsync(async () => {
+    for (let i = 0; i < orderedIds.length; i++) {
+      await db.runAsync(
+        'UPDATE routines SET position = ?, updated_at = ? WHERE id = ? AND position <> ?',
+        i, t, orderedIds[i], i,
+      );
+    }
+  });
 }
 
 export function getRoutine(db: SQLiteDatabase, id: string): Promise<{ id: string; name: string } | null> {
@@ -230,8 +249,8 @@ export async function createRoutine(db: SQLiteDatabase, name: string): Promise<s
   const id = newId();
   const t = now();
   await db.runAsync(
-    'INSERT INTO routines (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)',
-    id, name.trim(), t, t,
+    'INSERT INTO routines (id, name, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+    id, name.trim(), await nextRoutinePosition(db), t, t,
   );
   return id;
 }
@@ -294,8 +313,8 @@ export async function reorderRoutineExercises(db: SQLiteDatabase, orderedIds: st
   await db.withTransactionAsync(async () => {
     for (let i = 0; i < orderedIds.length; i++) {
       await db.runAsync(
-        'UPDATE routine_exercises SET position = ?, updated_at = ? WHERE id = ?',
-        i, t, orderedIds[i],
+        'UPDATE routine_exercises SET position = ?, updated_at = ? WHERE id = ? AND position <> ?',
+        i, t, orderedIds[i], i,
       );
     }
   });
@@ -599,7 +618,7 @@ export async function exportBackup(db: SQLiteDatabase): Promise<BackupFile> {
   });
 
   const routineRows = await db.getAllAsync<{ id: string; name: string }>(
-    'SELECT id, name FROM routines WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE',
+    'SELECT id, name FROM routines WHERE deleted_at IS NULL ORDER BY position, name COLLATE NOCASE',
   );
   const routines = [];
   for (const r of routineRows) {
@@ -707,7 +726,10 @@ export async function importBackup(db: SQLiteDatabase, file: BackupFile): Promis
       );
       if (exists) continue;
       const id = r.id ?? newId();
-      await db.runAsync('INSERT INTO routines (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)', id, r.name, t, t);
+      await db.runAsync(
+        'INSERT INTO routines (id, name, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+        id, r.name, await nextRoutinePosition(db), t, t,
+      );
       const ids = [...new Set(r.exercises.map((n) => exId.get(n.toLowerCase())!))];
       for (let i = 0; i < ids.length; i++) {
         await db.runAsync(

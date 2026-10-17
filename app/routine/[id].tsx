@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
+import Animated, { useAnimatedRef } from 'react-native-reanimated';
+import Sortable from 'react-native-sortables';
 import { Dialog } from '../../src/components/Dialog';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
@@ -16,6 +18,7 @@ import {
   startWorkout,
 } from '../../src/db/repo';
 import type { RoutineExercise } from '../../src/db/types';
+import { DragHandle } from '../../src/components/DragHandle';
 import { ExercisePicker } from '../../src/components/ExercisePicker';
 import { Button, Card, Empty, Field, SectionTitle } from '../../src/components/ui';
 import { space, useTheme } from '../../src/theme';
@@ -42,13 +45,11 @@ export default function RoutineEditor() {
     if (name.trim()) await renameRoutine(db, id, name);
   };
 
-  const move = async (index: number, dir: -1 | 1) => {
-    const target = index + dir;
-    if (target < 0 || target >= items.length) return;
-    const next = [...items];
-    [next[index], next[target]] = [next[target], next[index]];
-    setItems(next);
-    await reorderRoutineExercises(db, next.map((i) => i.id));
+  // Drag and drop: show the new order immediately, then save it
+  const scrollRef = useAnimatedRef<Animated.ScrollView>();
+  const onReorder = ({ data }: { data: RoutineExercise[] }) => {
+    setItems(data);
+    reorderRoutineExercises(db, data.map((i) => i.id));
   };
 
   const remove = async (item: RoutineExercise) => {
@@ -87,7 +88,11 @@ export default function RoutineEditor() {
   return (
     <>
       <Stack.Screen options={{ title: name || 'Routine' }} />
-      <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }} keyboardShouldPersistTaps="handled">
+      <Animated.ScrollView
+        ref={scrollRef}
+        contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }}
+        keyboardShouldPersistTaps="handled"
+      >
         <Field label="Name" value={name} onChangeText={setName} onBlur={saveName} onSubmitEditing={saveName} />
 
         <SectionTitle right={<Button title="+ Add" variant="ghost" onPress={() => setPickerOpen(true)} />}>
@@ -100,27 +105,33 @@ export default function RoutineEditor() {
             <Button title="Add exercise" onPress={() => setPickerOpen(true)} />
           </Card>
         ) : (
-          <View style={{ gap: space.sm }}>
-            {items.map((item, i) => (
-              <Card key={item.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: space.md }}>
-                <Text style={[font.dim, { width: 24 }]}>{i + 1}</Text>
+          <Sortable.Grid
+            columns={1}
+            rowGap={space.sm}
+            data={items}
+            keyExtractor={(item) => item.id}
+            customHandle
+            scrollableRef={scrollRef}
+            onDragEnd={onReorder}
+            renderItem={({ item, index }) => (
+              <Card style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: space.md }}>
+                <Text style={[font.dim, { width: 24 }]}>{index + 1}</Text>
                 <View style={{ flex: 1 }}>
                   <Text style={font.body}>{item.name}</Text>
                   {item.muscle_groups ? <Text style={font.small}>{item.muscle_groups}</Text> : null}
                 </View>
-                <IconBtn name="chevron-up" onPress={() => move(i, -1)} disabled={i === 0} />
-                <IconBtn name="chevron-down" onPress={() => move(i, 1)} disabled={i === items.length - 1} />
                 <IconBtn name="close" onPress={() => remove(item)} color={colors.danger} />
+                <DragHandle />
               </Card>
-            ))}
-          </View>
+            )}
+          />
         )}
 
         <View style={{ gap: space.sm, marginTop: space.xl }}>
           <Button title="Start this workout" big onPress={start} disabled={items.length === 0} />
           <Button title="Delete routine" variant="danger" onPress={confirmDelete} />
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
 
       <ExercisePicker
         visible={pickerOpen}

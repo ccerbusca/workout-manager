@@ -224,6 +224,17 @@ const MIGRATIONS: string[] = [
   DROP TABLE _v6_targets;
   DROP TABLE _v6_seed;
   `,
+
+  // v7 — routines get a user-defined order (drag and drop on the Train tab). Existing routines are
+  //      numbered in the order they were shown until now (alphabetical, case-insensitive; id breaks
+  //      ties), so nothing visibly moves.
+  `
+  ALTER TABLE routines ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
+  UPDATE routines
+     SET position = (SELECT COUNT(*) FROM routines r2
+                     WHERE lower(r2.name) < lower(routines.name)
+                        OR (lower(r2.name) = lower(routines.name) AND r2.id < routines.id));
+  `,
 ];
 
 export async function migrate(db: SQLiteDatabase): Promise<void> {

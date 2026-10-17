@@ -1,8 +1,11 @@
 import React, { useCallback, useState } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { getActiveWorkout, listRoutines, listWorkoutHistory, startWorkout } from '../../src/db/repo';
+import Animated, { useAnimatedRef } from 'react-native-reanimated';
+import Sortable from 'react-native-sortables';
+import { getActiveWorkout, listRoutines, listWorkoutHistory, reorderRoutines, startWorkout } from '../../src/db/repo';
+import { DragHandle } from '../../src/components/DragHandle';
 import type { Routine, Workout, WorkoutSummary } from '../../src/db/types';
 import { Button, Card, Empty, SectionTitle } from '../../src/components/ui';
 import { formatDate, formatDuration, formatTime, formatVolume } from '../../src/lib/format';
@@ -25,13 +28,20 @@ export default function TrainScreen() {
     }, [db]),
   );
 
+  // Drag and drop: show the new order immediately, then save it
+  const scrollRef = useAnimatedRef<Animated.ScrollView>();
+  const onReorder = ({ data }: { data: Routine[] }) => {
+    setRoutines(data);
+    reorderRoutines(db, data.map((r) => r.id));
+  };
+
   const start = async (routineId: string | null) => {
     const id = await startWorkout(db, routineId);
     router.push(`/workout/${id}`);
   };
 
   return (
-    <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }}>
+    <Animated.ScrollView ref={scrollRef} contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }}>
       {active ? (
         <Card style={{ borderColor: colors.accent, gap: space.md }}>
           <Text style={[font.small, { color: colors.accent, letterSpacing: 1 }]}>IN PROGRESS</Text>
@@ -51,10 +61,17 @@ export default function TrainScreen() {
               <Button title="Create a routine" onPress={() => router.push('/routines')} />
             </Card>
           ) : (
-            <View style={{ gap: space.sm }}>
-              {routines.map((r) => (
-                <Card key={r.id} onPress={() => start(r.id)}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Sortable.Grid
+              columns={1}
+              rowGap={space.sm}
+              data={routines}
+              keyExtractor={(r) => r.id}
+              customHandle
+              scrollableRef={scrollRef}
+              onDragEnd={onReorder}
+              renderItem={({ item: r }) => (
+                <Card onPress={() => start(r.id)}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
                     <View style={{ flex: 1 }}>
                       <Text style={font.h2}>{r.name}</Text>
                       <Text style={font.dim}>
@@ -62,10 +79,11 @@ export default function TrainScreen() {
                       </Text>
                     </View>
                     <Text style={{ color: colors.accent, fontWeight: '800', fontSize: 16 }}>START ›</Text>
+                    <DragHandle />
                   </View>
                 </Card>
-              ))}
-            </View>
+              )}
+            />
           )}
           <Button
             title="Empty workout"
@@ -100,6 +118,6 @@ export default function TrainScreen() {
           ))}
         </View>
       )}
-    </ScrollView>
+    </Animated.ScrollView>
   );
 }

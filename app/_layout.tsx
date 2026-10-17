@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider as NavigationThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SQLiteProvider, type SQLiteDatabase } from 'expo-sqlite';
 import { migrate } from '../src/db/migrations';
 import { seedIfEmpty } from '../src/db/repo';
@@ -15,13 +16,16 @@ async function initDb(db: SQLiteDatabase) {
 
 export default function RootLayout() {
   return (
-    <ThemeProvider>
-      <SQLiteProvider databaseName="workouts.db" onInit={initDb}>
-        <RestTimerProvider>
-          <ThemedApp />
-        </RestTimerProvider>
-      </SQLiteProvider>
-    </ThemeProvider>
+    // Needed for drag-and-drop (react-native-sortables uses gesture-handler)
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider>
+        <SQLiteProvider databaseName="workouts.db" onInit={initDb}>
+          <RestTimerProvider>
+            <ThemedApp />
+          </RestTimerProvider>
+        </SQLiteProvider>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }
 
