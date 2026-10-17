@@ -3,7 +3,7 @@
     "name": "Workout Manager",
     "slug": "workout-manager",
     "scheme": "workoutmanager",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0F1115",
@@ -28,7 +28,8 @@
       "expo-sqlite",
       "expo-status-bar",
       "expo-sharing",
-      "expo-notifications"
+      "expo-notifications",
+      "expo-font"
     ],
     "icon": "./assets/icon.png",
     "extra": {
