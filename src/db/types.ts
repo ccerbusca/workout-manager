@@ -9,6 +9,13 @@ export interface Exercise {
   load_type: LoadType;
 }
 
+/** An exercise with logged sets, as listed on the Progress tab. */
+export interface TrainedExercise extends Exercise {
+  session_count: number;
+  /** started_at of the most recent workout with this exercise. */
+  last_at: number;
+}
+
 export interface MuscleGroup {
   id: string;
   name: string;

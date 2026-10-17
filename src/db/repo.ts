@@ -7,6 +7,7 @@ import type {
   BackupWorkout,
   Exercise,
   ImportResult,
+  TrainedExercise,
   LoadType,
   MuscleGroup,
   ExerciseSessionStats,
@@ -142,6 +143,11 @@ async function insertExercise(db: SQLiteDatabase, name: string, muscleGroupIds: 
     );
   }
   return id;
+}
+
+export async function getExerciseName(db: SQLiteDatabase, id: string): Promise<string | null> {
+  const row = await db.getFirstAsync<{ name: string }>('SELECT name FROM exercises WHERE id = ?', id);
+  return row?.name ?? null;
 }
 
 /** IDs of the groups an exercise currently belongs to (for the edit form). */
@@ -365,7 +371,8 @@ export async function deleteWorkout(db: SQLiteDatabase, id: string): Promise<voi
   });
 }
 
-export function listWorkoutHistory(db: SQLiteDatabase, limit = 50): Promise<WorkoutSummary[]> {
+/** Finished workouts, newest first. Omit `limit` for all of them. */
+export function listWorkoutHistory(db: SQLiteDatabase, limit?: number): Promise<WorkoutSummary[]> {
   return db.getAllAsync<WorkoutSummary>(
     `SELECT w.id, w.routine_id, w.routine_name, w.started_at, w.ended_at, w.notes,
             COUNT(s.id)                      AS set_count,
@@ -377,8 +384,15 @@ export function listWorkoutHistory(db: SQLiteDatabase, limit = 50): Promise<Work
      GROUP BY w.id
      ORDER BY w.started_at DESC
      LIMIT ?`,
-    limit,
+    limit ?? -1, // SQLite: a negative LIMIT means no limit
   );
+}
+
+export async function countWorkoutHistory(db: SQLiteDatabase): Promise<number> {
+  const row = await db.getFirstAsync<{ n: number }>(
+    'SELECT COUNT(*) AS n FROM workouts WHERE deleted_at IS NULL AND ended_at IS NOT NULL',
+  );
+  return row?.n ?? 0;
 }
 
 export function listWorkoutExercises(db: SQLiteDatabase, workoutId: string): Promise<WorkoutExercise[]> {
@@ -496,15 +510,16 @@ export async function previousSets(
 
 // ───────────────────────── Progress ─────────────────────────
 
-/** Exercises that have at least one logged set, most-trained first. */
-export function listTrainedExercises(db: SQLiteDatabase): Promise<(Exercise & { session_count: number })[]> {
+/** Exercises that have at least one logged set, most recently done first, then most-trained. */
+export function listTrainedExercises(db: SQLiteDatabase): Promise<TrainedExercise[]> {
   return db.getAllAsync(
-    `SELECT e.id, e.name, ${MUSCLE_GROUPS_LABEL} AS muscle_groups, e.load_type, COUNT(DISTINCT s.workout_id) AS session_count
+    `SELECT e.id, e.name, ${MUSCLE_GROUPS_LABEL} AS muscle_groups, e.load_type,
+            COUNT(DISTINCT s.workout_id) AS session_count, MAX(w.started_at) AS last_at
      FROM exercises e
      JOIN workout_sets s ON s.exercise_id = e.id AND s.deleted_at IS NULL
      JOIN workouts w ON w.id = s.workout_id AND w.deleted_at IS NULL
      GROUP BY e.id
-     ORDER BY session_count DESC, e.name COLLATE NOCASE`,
+     ORDER BY last_at DESC, session_count DESC, e.name COLLATE NOCASE`,
   );
 }
 

@@ -1,5 +1,27 @@
+/** "Fri 26 Jun", with the year added when it isn't this year ("Thu 26 Jun 2025"). */
 export function formatDate(ms: number): string {
-  return new Date(ms).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+  const d = new Date(ms);
+  return d.toLocaleDateString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    ...(d.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}),
+  });
+}
+
+/** "26 Jun" or "26 Jun 2025": compact, for list rows. */
+export function formatDayMonth(ms: number): string {
+  const d = new Date(ms);
+  return d.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    ...(d.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}),
+  });
+}
+
+/** "June 2026": month headings in long lists. */
+export function formatMonthYear(ms: number): string {
+  return new Date(ms).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 }
 
 export function formatShortDate(ms: number): string {

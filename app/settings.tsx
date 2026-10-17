@@ -1,0 +1,120 @@
+import React from 'react';
+import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Stack } from 'expo-router';
+import { useSQLiteContext } from 'expo-sqlite';
+import Constants from 'expo-constants';
+import { Ionicons } from '@expo/vector-icons';
+import { exportBackup, importBackup } from '../src/db/repo';
+import { Dialog } from '../src/components/Dialog';
+import { SectionTitle } from '../src/components/ui';
+import { backupFileName, fromLocalIso, parseBackup } from '../src/lib/backup';
+import { pickTextFile, shareJsonFile } from '../src/lib/backupFiles';
+import { formatDayMonth } from '../src/lib/format';
+import { colors, font, radius, space } from '../src/theme';
+
+type IconName = React.ComponentProps<typeof Ionicons>['name'];
+
+/** App settings. For now: backup (JSON export / import). Opened from the gear in the tab header. */
+export default function SettingsScreen() {
+  const db = useSQLiteContext();
+
+  const exportData = async () => {
+    try {
+      const data = await exportBackup(db);
+      await shareJsonFile(backupFileName(Date.now()), JSON.stringify(data, null, 2));
+    } catch (e) {
+      Dialog.alert('Export failed', e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const importData = async () => {
+    let file;
+    try {
+      const text = await pickTextFile();
+      if (text == null) return;
+      file = parseBackup(JSON.parse(text));
+    } catch (e) {
+      Dialog.alert('Can’t read that file', e instanceof Error ? e.message : String(e));
+      return;
+    }
+    const times = file.workouts.map((w) => fromLocalIso(w.startedAt)!).sort((a, b) => a - b);
+    const range = times.length ? ` from ${formatDayMonth(times[0])} to ${formatDayMonth(times[times.length - 1])}` : '';
+    const parked = file;
+    Dialog.alert(
+      'Import this file?',
+      `${file.workouts.length} workouts${range}, ${file.exercises.length} exercises and ${file.routines?.length ?? 0} routines.\n\n` +
+        'Only adds what’s missing: nothing on the phone is changed or deleted, and importing the same file again adds nothing.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Import',
+          onPress: async () => {
+            try {
+              const r = await importBackup(db, parked);
+              Dialog.alert(
+                'Import done',
+                `Added ${r.workoutsAdded} workouts (${r.setsAdded} sets), ${r.exercisesAdded} new exercises and ${r.routinesAdded} routines.` +
+                  (r.exercisesMatched ? ` ${r.exercisesMatched} exercises matched ones you already had.` : '') +
+                  (r.workoutsSkipped ? ` ${r.workoutsSkipped} workouts were already here and were skipped.` : ''),
+              );
+            } catch (e) {
+              Dialog.alert('Import failed', `Nothing was changed.\n\n${e instanceof Error ? e.message : String(e)}`);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  return (
+    <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }}>
+      <Stack.Screen options={{ title: 'Settings' }} />
+
+      <SectionTitle>Backup</SectionTitle>
+      <View style={{ borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
+        <Row
+          icon="cloud-upload-outline"
+          title="Export data"
+          hint="Save everything to a JSON file: Drive, Files, email…"
+          onPress={exportData}
+        />
+        <View style={{ height: 1, backgroundColor: colors.border }} />
+        <Row
+          icon="cloud-download-outline"
+          title="Import data"
+          hint="Add workouts from a JSON file, e.g. an export or converted history"
+          onPress={importData}
+        />
+      </View>
+      <Text style={[font.small, { marginTop: space.sm }]}>
+        Your data lives only on this phone, and uninstalling the app deletes it. Export now and then to keep a copy.
+      </Text>
+
+      <Text style={[font.small, { textAlign: 'center', marginTop: space.xl * 2 }]}>
+        Workout Manager {Constants.expoConfig?.version ?? ''}
+      </Text>
+    </ScrollView>
+  );
+}
+
+function Row(props: { icon: IconName; title: string; hint: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={props.onPress}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: space.md,
+        padding: space.lg,
+        backgroundColor: pressed ? colors.surfaceAlt : colors.surface,
+      })}
+    >
+      <Ionicons name={props.icon} size={22} color={colors.accent} />
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={[font.body, { fontWeight: '700' }]}>{props.title}</Text>
+        <Text style={font.small}>{props.hint}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+    </Pressable>
+  );
+}

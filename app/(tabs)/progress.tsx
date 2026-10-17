@@ -2,10 +2,18 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { exerciseStats, listLoggedUnits, listTrainedExercises, listWorkoutHistory } from '../../src/db/repo';
-import type { Exercise, ExerciseSessionStats, LoadType, WorkoutSummary } from '../../src/db/types';
+import {
+  countWorkoutHistory,
+  exerciseStats,
+  listExerciseMuscleGroupLinks,
+  listLoggedUnits,
+  listTrainedExercises,
+  listWorkoutHistory,
+} from '../../src/db/repo';
+import type { ExerciseSessionStats, LoadType, TrainedExercise, WorkoutSummary } from '../../src/db/types';
+import { ExerciseDropdown } from '../../src/components/ExerciseDropdown';
 import { LineChart, type ChartPoint } from '../../src/components/LineChart';
-import { Card, Empty, SectionTitle, Segmented } from '../../src/components/ui';
+import { Button, Card, Empty, SectionTitle, Segmented } from '../../src/components/ui';
 import { formatDate, formatLoad, formatShortDate, formatVolume } from '../../src/lib/format';
 import { colors, font, radius, space } from '../../src/theme';
 
@@ -22,13 +30,18 @@ const LEVEL_METRICS: typeof WEIGHT_METRICS = [
   { key: 'reps', label: 'Total reps', unit: 'reps', help: 'Total reps across all sets in the session.' },
 ];
 
+/** How many rows the Sessions and Recent workouts previews show before "See all". */
+const PREVIEW = 5;
+
 export default function ProgressScreen() {
   const db = useSQLiteContext();
-  const [exercises, setExercises] = useState<(Exercise & { session_count: number })[]>([]);
+  const [exercises, setExercises] = useState<TrainedExercise[]>([]);
+  const [groupsByExercise, setGroupsByExercise] = useState(new Map<string, string[]>());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [stats, setStats] = useState<ExerciseSessionStats[]>([]);
   const [metric, setMetric] = useState<Metric>('e1rm');
   const [history, setHistory] = useState<WorkoutSummary[]>([]);
+  const [historyCount, setHistoryCount] = useState(0);
   // Units this exercise has sets in, and which one the chart shows
   const [units, setUnits] = useState<LoadType[]>([]);
   const [loadType, setLoadType] = useState<LoadType>('weight');
@@ -39,7 +52,11 @@ export default function ProgressScreen() {
         const list = await listTrainedExercises(db);
         setExercises(list);
         setSelectedId((cur) => (cur && list.some((e) => e.id === cur) ? cur : list[0]?.id ?? null));
-        setHistory(await listWorkoutHistory(db, 30));
+        const groups = new Map<string, string[]>();
+        for (const l of await listExerciseMuscleGroupLinks(db)) groups.set(l.exercise_id, [...(groups.get(l.exercise_id) ?? []), l.name]);
+        setGroupsByExercise(groups);
+        setHistory(await listWorkoutHistory(db, PREVIEW));
+        setHistoryCount(await countWorkoutHistory(db));
       })();
     }, [db]),
   );
@@ -70,6 +87,7 @@ export default function ProgressScreen() {
     y: m.key === 'e1rm' ? s.best_e1rm : m.key === 'top' ? s.top_weight : m.key === 'reps' ? s.total_reps : s.volume,
     label: formatShortDate(s.started_at),
   }));
+  const recentSessions = stats.slice(-PREVIEW).reverse();
 
   if (exercises.length === 0) {
     return (
@@ -81,11 +99,12 @@ export default function ProgressScreen() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }}>
-        {exercises.map((e) => (
-          <Chip key={e.id} label={e.name} active={e.id === selectedId} onPress={() => setSelectedId(e.id)} />
-        ))}
-      </ScrollView>
+      <ExerciseDropdown
+        exercises={exercises}
+        groupsByExercise={groupsByExercise}
+        selectedId={selectedId}
+        onSelect={setSelectedId}
+      />
 
       <Card style={{ marginTop: space.md, gap: space.md }}>
         {units.length > 1 ? (
@@ -122,12 +141,12 @@ export default function ProgressScreen() {
       </Card>
 
       <SectionTitle>{units.length > 1 ? `Sessions (${loadType === 'level' ? 'levels' : 'kg'})` : 'Sessions'}</SectionTitle>
-      <View style={{ gap: space.xs }}>
-        {[...stats].reverse().map((s) => (
+      <View>
+        {recentSessions.map((s) => (
           <Pressable
             key={s.workout_id}
             onPress={() => router.push(`/workout/${s.workout_id}`)}
-            style={{ flexDirection: 'row', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border }}
+            style={{ flexDirection: 'row', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}
           >
             <Text style={[font.dim, { flex: 1 }]}>{formatDate(s.started_at)}</Text>
             <Text style={[font.body, { fontVariant: ['tabular-nums'] }]}>
@@ -136,8 +155,16 @@ export default function ProgressScreen() {
           </Pressable>
         ))}
       </View>
+      {stats.length > PREVIEW && selectedId ? (
+        <Button
+          title={`See all ${stats.length} sessions`}
+          variant="secondary"
+          style={{ marginTop: space.md }}
+          onPress={() => router.push({ pathname: '/history', params: { exerciseId: selectedId, unit: loadType } })}
+        />
+      ) : null}
 
-      <SectionTitle>All workouts</SectionTitle>
+      <SectionTitle>Recent workouts</SectionTitle>
       <View style={{ gap: space.sm }}>
         {history.map((w) => (
           <Card key={w.id} onPress={() => router.push(`/workout/${w.id}`)}>
@@ -148,24 +175,14 @@ export default function ProgressScreen() {
           </Card>
         ))}
       </View>
+      {historyCount > PREVIEW ? (
+        <Button
+          title={`See all ${historyCount} workouts`}
+          variant="secondary"
+          style={{ marginTop: space.md }}
+          onPress={() => router.push('/history')}
+        />
+      ) : null}
     </ScrollView>
-  );
-}
-
-function Chip(props: { label: string; active: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={props.onPress}
-      style={{
-        paddingHorizontal: space.md,
-        paddingVertical: 8,
-        borderRadius: radius.lg,
-        borderWidth: 1,
-        borderColor: props.active ? colors.accent : colors.border,
-        backgroundColor: props.active ? colors.accent : colors.surface,
-      }}
-    >
-      <Text style={{ color: props.active ? colors.accentText : colors.text, fontWeight: '600' }}>{props.label}</Text>
-    </Pressable>
   );
 }
