@@ -9,7 +9,7 @@ import { Dialog } from '../../src/components/Dialog';
 import { Button, Card, SectionTitle, Stepper } from '../../src/components/ui';
 import { formatDate, parseNumber } from '../../src/lib/format';
 import { radius, space, useTheme } from '../../src/theme';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
+import { KeyboardScrollView } from '../../src/components/KeyboardScrollView';
 
 /** Pick when a past workout happened and which routine it was, then log its sets. */
 export default function PastWorkoutScreen() {
@@ -48,7 +48,7 @@ export default function PastWorkoutScreen() {
   };
 
   return (
-    <KeyboardAwareScrollView bottomOffset={space.lg} contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }} keyboardShouldPersistTaps="handled">
+    <KeyboardScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }} keyboardShouldPersistTaps="handled">
       <Stack.Screen options={{ title: 'Log a past workout' }} />
 
       <Card>
@@ -73,7 +73,7 @@ export default function PastWorkoutScreen() {
       </View>
 
       <Button title={`Log ${formatDate(day)} ›`} big style={{ marginTop: space.xl }} onPress={create} />
-    </KeyboardAwareScrollView>
+    </KeyboardScrollView>
   );
 }
 

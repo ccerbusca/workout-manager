@@ -22,7 +22,7 @@ import { prefs } from '../../../src/lib/prefs';
 import { describeHit, findRecords, mainHit, type PrHit } from '../../../src/lib/records';
 import { useRestTimer } from '../../../src/lib/restTimer';
 import { radius, space, useTheme } from '../../../src/theme';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
+import { KeyboardScrollView } from '../../../src/components/KeyboardScrollView';
 
 /**
  * Logging screen for one exercise in a workout: last time, today's sets, weight/reps steppers and
@@ -168,7 +168,7 @@ export default function ExerciseLogScreen() {
   return (
     <>
       <Stack.Screen options={{ title: exercise.name }} />
-      <KeyboardAwareScrollView bottomOffset={space.lg} contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }} keyboardShouldPersistTaps="handled">
+      <KeyboardScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }} keyboardShouldPersistTaps="handled">
         {!isFinished ? <RestTimerCard /> : null}
 
         <SectionTitle>{prev ? `Last time · ${formatDate(prev.started_at)} (${formatAgo(prev.started_at)})` : 'Last time'}</SectionTitle>
@@ -265,7 +265,7 @@ export default function ExerciseLogScreen() {
           style={{ marginTop: space.md }}
           onPress={() => router.back()}
         />
-      </KeyboardAwareScrollView>
+      </KeyboardScrollView>
     </>
   );
 }

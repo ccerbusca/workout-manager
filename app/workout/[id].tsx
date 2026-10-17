@@ -30,7 +30,7 @@ import {
   formatVolume,
 } from '../../src/lib/format';
 import { radius, space, useTheme } from '../../src/theme';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
+import { KeyboardScrollView } from '../../src/components/KeyboardScrollView';
 
 export default function WorkoutScreen() {
   const { id, edit } = useLocalSearchParams<{ id: string; edit?: string }>();
@@ -178,7 +178,7 @@ function WorkoutOverview({
             ),
         }}
       />
-      <KeyboardAwareScrollView bottomOffset={space.lg}
+      <KeyboardScrollView
         contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2, gap: space.sm }}
         keyboardShouldPersistTaps="handled"
       >
@@ -257,7 +257,7 @@ function WorkoutOverview({
             </>
           )}
         </View>
-      </KeyboardAwareScrollView>
+      </KeyboardScrollView>
 
       <ExercisePicker
         visible={pickerOpen}
@@ -357,7 +357,7 @@ function WorkoutSummaryView({ workout, onEdit }: { workout: Workout; onEdit: () 
   };
 
   return (
-    <KeyboardAwareScrollView bottomOffset={space.lg} contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }} keyboardShouldPersistTaps="handled">
+    <KeyboardScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }} keyboardShouldPersistTaps="handled">
       <Stack.Screen
         options={{ title: workout.routine_name ?? 'Free workout', headerRight: () => <Button title="Edit" variant="ghost" onPress={onEdit} /> }}
       />
@@ -403,7 +403,7 @@ function WorkoutSummaryView({ workout, onEdit }: { workout: Workout; onEdit: () 
       </View>
 
       <Button title="Delete workout" variant="danger" onPress={remove} style={{ marginTop: space.xl }} />
-    </KeyboardAwareScrollView>
+    </KeyboardScrollView>
   );
 }
 
