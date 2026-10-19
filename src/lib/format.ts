@@ -47,10 +47,14 @@ export function formatWeight(w: number): string {
 
 import type { LoadType } from '../db/types';
 
-/** "80 kg" or "level 7" */
+/** "80 kg", "level 7", "BW" (bodyweight only) or "BW +10 kg" (with added weight) */
 export function formatLoad(v: number, t: LoadType): string {
+  if (t === 'bodyweight') return v > 0 ? `BW +${formatWeight(v)} kg` : 'BW';
   return t === 'level' ? `level ${formatWeight(v)}` : `${formatWeight(v)} kg`;
 }
+
+/** Short unit names for headers and labels. */
+export const UNIT_LABEL: Record<LoadType, string> = { weight: 'kg', level: 'level', bodyweight: 'bodyweight' };
 
 
 export function formatVolume(v: number): string {

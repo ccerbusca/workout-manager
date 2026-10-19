@@ -43,7 +43,7 @@ export function parseBackup(json: unknown): BackupFile {
   const optStr = (v: unknown, path: string) => (v == null ? undefined : str(v, path));
   const num = (v: unknown, path: string) => (typeof v === 'number' && Number.isFinite(v) ? v : fail(path, 'expected a number'));
   const loadType = (v: unknown, path: string): LoadType | undefined =>
-    v == null ? undefined : v === 'weight' || v === 'level' ? v : fail(path, "expected 'weight' or 'level'");
+    v == null ? undefined : v === 'weight' || v === 'level' || v === 'bodyweight' ? v : fail(path, "expected 'weight', 'level' or 'bodyweight'");
   const date = (v: unknown, path: string) => {
     const s = str(v, path);
     if (fromLocalIso(s) == null) fail(path, `not a date: "${s}" (use YYYY-MM-DDTHH:mm)`);

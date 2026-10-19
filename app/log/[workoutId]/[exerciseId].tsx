@@ -73,7 +73,8 @@ export default function ExerciseLogScreen() {
     const cur = current.filter((s) => s.load_type === unit);
     const prevSame = last.filter((s) => s.load_type === unit);
     const ref = cur[cur.length - 1] ?? prevSame[cur.length] ?? prevSame[prevSame.length - 1];
-    setWeight(ref ? formatWeight(ref.weight) : '');
+    // Bodyweight starts at 0 added kg rather than an empty field
+    setWeight(ref ? formatWeight(ref.weight) : unit === 'bodyweight' ? '0' : '');
     setReps(ref ? String(ref.reps) : '');
   };
 
@@ -112,7 +113,10 @@ export default function ExerciseLogScreen() {
     const w = parseNumber(weight);
     const r = parseNumber(reps);
     if (w == null || r == null || r <= 0) {
-      Dialog.alert('Check your numbers', 'Enter a weight or level (0 for bodyweight) and at least 1 rep.');
+      Dialog.alert(
+        'Check your numbers',
+        `Enter ${loadType === 'level' ? 'a level' : loadType === 'bodyweight' ? 'the added weight (0 for none)' : 'a weight'} and at least 1 rep.`,
+      );
       return;
     }
     let newSetId: string | null = null;
@@ -247,7 +251,7 @@ export default function ExerciseLogScreen() {
         <Card style={{ marginTop: space.lg, gap: space.md }}>
           <View style={{ flexDirection: 'row', gap: space.md }}>
             <Stepper
-              label={loadType === 'level' ? 'level' : 'kg'}
+              label={loadType === 'level' ? 'level' : loadType === 'bodyweight' ? 'added kg' : 'kg'}
               value={weight}
               onChange={setWeight}
               step={loadType === 'level' ? 1 : 2.5}
@@ -279,6 +283,8 @@ function LastTimeTable({ sets, nextSet }: { sets: WorkoutSet[]; nextSet: number 
   const { colors, font } = useTheme();
   const units = new Set(sets.map((s) => s.load_type));
   const single = units.size === 1 ? sets[0].load_type : null;
+  // Bodyweight cells read "BW" / "BW +10 kg", so they keep the unit like a mixed session does
+  const plain = single === 'weight' || single === 'level';
   const loadHeader = single === 'level' ? 'LEVEL' : single === 'weight' ? 'KG' : 'LOAD';
   const cell = { flex: 1, textAlign: 'center' as const, fontVariant: ['tabular-nums' as const] };
 
@@ -306,7 +312,7 @@ function LastTimeTable({ sets, nextSet }: { sets: WorkoutSet[]; nextSet: number 
           >
             <Text style={[font.dim, cell, isNext && { color: colors.accent, fontWeight: '800' }]}>{i + 1}</Text>
             <Text style={[font.body, cell, { fontWeight: '700' }]}>
-              {single ? formatWeight(s.weight) : formatLoad(s.weight, s.load_type)}
+              {plain ? formatWeight(s.weight) : formatLoad(s.weight, s.load_type)}
             </Text>
             <Text style={[font.body, cell]}>{s.reps}</Text>
           </View>

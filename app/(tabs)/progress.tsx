@@ -19,7 +19,7 @@ import { Button, Empty, SectionTitle, Segmented } from '../../src/components/ui'
 import { formatDate, formatLoad, formatShortDate } from '../../src/lib/format';
 import { radius, space, useTheme } from '../../src/theme';
 
-type Metric = 'e1rm' | 'top' | 'volume' | 'reps';
+type Metric = 'e1rm' | 'top' | 'volume' | 'reps' | 'maxReps';
 
 const WEIGHT_METRICS: { key: Metric; label: string; unit: string; help: string }[] = [
   { key: 'e1rm', label: 'Est. 1RM', unit: 'kg', help: 'Estimated one-rep max from your best set (Epley formula).' },
@@ -31,6 +31,18 @@ const LEVEL_METRICS: typeof WEIGHT_METRICS = [
   { key: 'top', label: 'Top level', unit: 'level', help: 'Highest machine level used in the session.' },
   { key: 'reps', label: 'Total reps', unit: 'reps', help: 'Total reps across all sets in the session.' },
 ];
+
+const BODYWEIGHT_METRICS: typeof WEIGHT_METRICS = [
+  { key: 'maxReps', label: 'Max reps', unit: 'reps', help: 'Most reps in a single set in the session.' },
+  { key: 'reps', label: 'Total reps', unit: 'reps', help: 'Total reps across all sets in the session.' },
+  { key: 'top', label: 'Added', unit: 'kg', help: 'Most weight added on top of bodyweight in the session (0 = bodyweight only).' },
+];
+
+const UNIT_OPTIONS: Record<LoadType, string> = { weight: 'Weight (kg)', level: 'Machine level', bodyweight: 'Bodyweight' };
+
+/** "max 12 reps" for bodyweight, "top 80 kg" / "top level 7" otherwise. */
+const sessionBest = (s: ExerciseSessionStats, unit: LoadType) =>
+  unit === 'bodyweight' ? `max ${s.max_reps} reps` : `top ${formatLoad(s.top_weight, unit)}`;
 
 /** How many sessions the preview shows before "See all". */
 const PREVIEW = 5;
@@ -103,11 +115,16 @@ export default function ProgressScreen() {
     else setStats([]);
   }, [db, selectedId, loadType, focusKey]);
 
-  const metrics = loadType === 'level' ? LEVEL_METRICS : WEIGHT_METRICS;
+  const metrics = loadType === 'level' ? LEVEL_METRICS : loadType === 'bodyweight' ? BODYWEIGHT_METRICS : WEIGHT_METRICS;
   const m = metrics.find((x) => x.key === metric) ?? metrics[0];
   const points: ChartPoint[] = stats.map((s) => ({
     x: s.started_at,
-    y: m.key === 'e1rm' ? s.best_e1rm : m.key === 'top' ? s.top_weight : m.key === 'reps' ? s.total_reps : s.volume,
+    y:
+      m.key === 'e1rm' ? s.best_e1rm
+      : m.key === 'top' ? s.top_weight
+      : m.key === 'reps' ? s.total_reps
+      : m.key === 'maxReps' ? s.max_reps
+      : s.volume,
     label: formatShortDate(s.started_at),
   }));
   const recentSessions = stats.slice(-PREVIEW).reverse();
@@ -160,10 +177,9 @@ export default function ProgressScreen() {
         <View style={{ padding: space.lg, gap: space.md }}>
           {units.length > 1 ? (
             <Segmented
-              options={[
-                { value: 'weight', label: 'Weight (kg)' },
-                { value: 'level', label: 'Machine level' },
-              ]}
+              options={(['weight', 'level', 'bodyweight'] as LoadType[])
+                .filter((u) => units.includes(u))
+                .map((u) => ({ value: u, label: UNIT_OPTIONS[u] }))}
               value={loadType}
               onChange={setLoadType}
             />
@@ -201,7 +217,7 @@ export default function ProgressScreen() {
         <PanelDivider />
         <View style={{ padding: space.lg, paddingTop: space.md }}>
           <Text style={[font.small, { letterSpacing: 1, fontWeight: '700', marginBottom: space.xs }]}>
-            {units.length > 1 ? `RECENT SESSIONS (${loadType === 'level' ? 'LEVELS' : 'KG'})` : 'RECENT SESSIONS'}
+            {units.length > 1 ? `RECENT SESSIONS (${loadType === 'level' ? 'LEVELS' : loadType === 'bodyweight' ? 'BODYWEIGHT' : 'KG'})` : 'RECENT SESSIONS'}
           </Text>
           <View>
             {recentSessions.map((s, i) => (
@@ -217,7 +233,7 @@ export default function ProgressScreen() {
               >
                 <Text style={[font.dim, { flex: 1 }]}>{formatDate(s.started_at)}</Text>
                 <Text style={[font.body, { fontVariant: ['tabular-nums'] }]}>
-                  {s.set_count} sets · top {formatLoad(s.top_weight, loadType)}
+                  {s.set_count} sets · {sessionBest(s, loadType)}
                 </Text>
               </Pressable>
             ))}

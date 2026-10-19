@@ -32,14 +32,15 @@ import type {
 // "Dumbbell Curl"). Most of the rest come from the user's workout history, under their proper
 // names, so importing imports/workout-history-corrected.json after a fresh install merges into
 // these by name. Ten more are popular lifts that filled gaps (no fly, hammer curl, glutes, abs...).
-const DEFAULT_EXERCISES: [string, string[]][] = [
+// An optional third entry is the starting unit (default kg).
+const DEFAULT_EXERCISES: [string, string[], LoadType?][] = [
   // Push
   ['Bench Press', ['Chest', 'Shoulders', 'Triceps']],
   ['Dumbbell Bench Press', ['Chest', 'Shoulders', 'Triceps']],
   ['Incline Bench Press', ['Chest', 'Shoulders', 'Triceps']],
   ['Incline Dumbbell Press', ['Chest', 'Shoulders', 'Triceps']],
   ['Cable Fly', ['Chest']],
-  ['Dip', ['Chest', 'Shoulders', 'Triceps']],
+  ['Dip', ['Chest', 'Shoulders', 'Triceps'], 'bodyweight'],
   ['Overhead Press', ['Shoulders', 'Triceps']],
   ['Shoulder Press', ['Shoulders', 'Triceps']],
   ['Dumbbell Shoulder Press', ['Shoulders', 'Triceps']],
@@ -50,8 +51,8 @@ const DEFAULT_EXERCISES: [string, string[]][] = [
   ['Overhead Triceps Extension', ['Triceps']],
   ['Dumbbell Skull Crusher', ['Triceps']],
   // Pull
-  ['Pull-up', ['Lats', 'Biceps']],
-  ['Chin-up', ['Lats', 'Biceps']],
+  ['Pull-up', ['Lats', 'Biceps'], 'bodyweight'],
+  ['Chin-up', ['Lats', 'Biceps'], 'bodyweight'],
   ['Lat Pulldown', ['Lats', 'Biceps']],
   ['Underhand Lat Pulldown', ['Lats', 'Biceps']],
   ['Barbell Row', ['Upper back', 'Lats', 'Biceps']],
@@ -80,7 +81,7 @@ const DEFAULT_EXERCISES: [string, string[]][] = [
   ['Leg Curl', ['Hamstrings']],
   ['Calf Raise', ['Calves']],
   // Core
-  ['Hanging Leg Raise', ['Abs']],
+  ['Hanging Leg Raise', ['Abs'], 'bodyweight'],
 ];
 
 export async function seedIfEmpty(db: SQLiteDatabase): Promise<void> {
@@ -88,10 +89,10 @@ export async function seedIfEmpty(db: SQLiteDatabase): Promise<void> {
   if ((row?.n ?? 0) > 0) return;
   const t = now();
   await db.withTransactionAsync(async () => {
-    for (const [name, groups] of DEFAULT_EXERCISES) {
+    for (const [name, groups, unit] of DEFAULT_EXERCISES) {
       const groupIds: string[] = [];
       for (const g of groups) groupIds.push(await findOrInsertMuscleGroup(db, g, t));
-      await insertExercise(db, name, groupIds, t);
+      await insertExercise(db, name, groupIds, t, unit);
     }
   });
 }
@@ -168,13 +169,20 @@ export async function createExercise(db: SQLiteDatabase, name: string, muscleGro
   return id;
 }
 
-async function insertExercise(db: SQLiteDatabase, name: string, muscleGroupIds: string[], t: number): Promise<string> {
-  // New exercises start in kg; switch to levels with a long-press in a workout (setExerciseLoadType).
+async function insertExercise(
+  db: SQLiteDatabase,
+  name: string,
+  muscleGroupIds: string[],
+  t: number,
+  loadType: LoadType = 'weight',
+): Promise<string> {
+  // New exercises start in kg unless seeded otherwise; the unit is switched in a workout
+  // (the KG | LVL | BW switch, setExerciseLoadType).
   // muscle_group (the pre-v5 text column) is left NULL; groups live in exercise_muscle_groups.
   const id = newId();
   await db.runAsync(
-    `INSERT INTO exercises (id, name, load_type, created_at, updated_at) VALUES (?, ?, 'weight', ?, ?)`,
-    id, name.trim(), t, t,
+    `INSERT INTO exercises (id, name, load_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+    id, name.trim(), loadType, t, t,
   );
   for (const groupId of new Set(muscleGroupIds)) {
     await db.runAsync(
@@ -456,19 +464,29 @@ export async function deleteWorkout(db: SQLiteDatabase, id: string): Promise<voi
   });
 }
 
-/** Finished workouts, newest first. Omit `limit` for all of them. */
-export function listWorkoutHistory(db: SQLiteDatabase, limit?: number): Promise<WorkoutSummary[]> {
+/**
+ * kg volume of a set, as SQL over `s` (workout_sets): weight × reps for kg sets, and
+ * (bodyweight + added) × reps for bodyweight sets when the user's bodyweight is known (the one
+ * `?` parameter; 0 = unknown, so bodyweight sets count 0). Level sets never count.
+ */
+const SET_VOLUME = `CASE WHEN s.load_type = 'weight' THEN s.weight * s.reps
+                        WHEN s.load_type = 'bodyweight' THEN (CASE WHEN ? > 0 THEN ? + s.weight ELSE 0 END) * s.reps
+                        ELSE 0 END`;
+
+/** Finished workouts, newest first. Omit `limit` for all of them. `bodyweight` (kg, 0 = unknown) feeds volume. */
+export function listWorkoutHistory(db: SQLiteDatabase, limit?: number, bodyweight = 0): Promise<WorkoutSummary[]> {
   return db.getAllAsync<WorkoutSummary>(
     `SELECT w.id, w.routine_id, w.routine_name, w.started_at, w.ended_at, w.notes,
             COUNT(s.id)                      AS set_count,
             COUNT(DISTINCT s.exercise_id)    AS exercise_count,
-            COALESCE(SUM(CASE WHEN s.load_type = 'weight' THEN s.weight * s.reps ELSE 0 END), 0) AS volume
+            COALESCE(SUM(${SET_VOLUME}), 0) AS volume
      FROM workouts w
      LEFT JOIN workout_sets s ON s.workout_id = w.id AND s.deleted_at IS NULL
      WHERE w.deleted_at IS NULL AND w.ended_at IS NOT NULL
      GROUP BY w.id
      ORDER BY w.started_at DESC
      LIMIT ?`,
+    bodyweight, bodyweight,
     limit ?? -1, // SQLite: a negative LIMIT means no limit
   );
 }
@@ -639,6 +657,7 @@ export function exerciseStats(
                      ELSE s.weight * (1.0 + s.reps / 30.0) END)   AS best_e1rm,
             SUM(s.weight * s.reps)                                AS volume,
             SUM(s.reps)                                           AS total_reps,
+            MAX(s.reps)                                           AS max_reps,
             COUNT(*)                                              AS set_count
      FROM workout_sets s
      JOIN workouts w ON w.id = s.workout_id
@@ -959,21 +978,22 @@ export function listUsedMuscleGroups(db: SQLiteDatabase): Promise<MuscleGroup[]>
 // ───────────────────────── Workout trends ─────────────────────────
 
 /**
- * Every finished workout with its totals, oldest first: set count, kg volume (weight × reps of kg
- * sets only), and created_at, which tells live-tracked workouts (created when started) apart from
+ * Every finished workout with its totals, oldest first: set count, kg volume (see SET_VOLUME;
+ * `bodyweight` in kg, 0 = unknown), and created_at, which tells live-tracked workouts (created when started) apart from
  * imported or back-filled ones (created later, with made-up times).
  */
-export function listWorkoutTrendLog(db: SQLiteDatabase): Promise<
+export function listWorkoutTrendLog(db: SQLiteDatabase, bodyweight = 0): Promise<
   { id: string; started_at: number; ended_at: number; created_at: number; set_count: number; volume: number }[]
 > {
   return db.getAllAsync(
     `SELECT w.id, w.started_at, w.ended_at, w.created_at,
             COUNT(s.id) AS set_count,
-            COALESCE(SUM(CASE WHEN s.load_type = 'weight' THEN s.weight * s.reps ELSE 0 END), 0) AS volume
+            COALESCE(SUM(${SET_VOLUME}), 0) AS volume
      FROM workouts w
      LEFT JOIN workout_sets s ON s.workout_id = w.id AND s.deleted_at IS NULL
      WHERE w.deleted_at IS NULL AND w.ended_at IS NOT NULL
      GROUP BY w.id
      ORDER BY w.started_at`,
+    bodyweight, bodyweight,
   );
 }

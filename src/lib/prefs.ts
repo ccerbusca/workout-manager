@@ -40,6 +40,16 @@ export const prefs = {
   },
   setWeeklyGoal: (n: number) => write('consistency.weeklyGoal', String(n)),
 
+  /**
+   * The user's bodyweight in kg, for the volume of bodyweight sets ((bodyweight + added) × reps).
+   * 0 = not set: bodyweight sets then count 0 toward volume. One value, applied to all history.
+   */
+  getBodyweight: (): number => {
+    const n = Number(read('body.weightKg'));
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  },
+  setBodyweight: (kg: number) => write('body.weightKg', String(kg > 0 ? Math.round(kg * 10) / 10 : 0)),
+
   /** Muscle-group sections collapsed on the Exercises tab, by group name ("Other" included). */
   getCollapsedGroups: (): string[] => {
     try {

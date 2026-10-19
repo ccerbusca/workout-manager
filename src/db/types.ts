@@ -1,5 +1,8 @@
-/** How an exercise's load is measured: kilograms, or a machine's level number. */
-export type LoadType = 'weight' | 'level';
+/**
+ * How an exercise's load is measured: kilograms, a machine's level number, or bodyweight. For
+ * bodyweight sets `weight` is the added weight in kg (0 = bodyweight only, 10 = belt with 10 kg).
+ */
+export type LoadType = 'weight' | 'level' | 'bodyweight';
 
 export interface Exercise {
   id: string;
@@ -92,6 +95,8 @@ export interface ExerciseSessionStats {
   best_e1rm: number;
   volume: number;
   total_reps: number;
+  /** Most reps in a single set (charted for bodyweight exercises). */
+  max_reps: number;
   set_count: number;
 }
 

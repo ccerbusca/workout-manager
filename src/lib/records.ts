@@ -8,9 +8,9 @@ import { formatLoad, formatWeight } from './format';
  * deleting sets, or back-filling past workouts, can never leave stale records).
  *
  * A set is a record when it beats every EARLIER set of the same exercise in the same unit
- * (kg and levels are never compared). "Earlier" = earlier workout, or earlier in the same workout.
+ * (kg, levels and bodyweight are never compared). "Earlier" = earlier workout, or earlier in the same workout.
  * Three kinds:
- *  - weight: heaviest weight (or highest level) ever
+ *  - weight: heaviest weight (or highest level, or most added weight on a bodyweight exercise) ever
  *  - e1rm:   best estimated one-rep max (Epley), kg only
  *  - reps:   more reps than ever at this weight/level or heavier
  * To avoid noise, nothing counts as a record in the first workout an exercise was done in (per
@@ -40,7 +40,7 @@ const EPS = 1e-9;
 /** Record hits per set id, for every set in the history that was a record when it was done. */
 export function findRecords(history: SetHistoryRow[]): Map<string, PrHit[]> {
   const out = new Map<string, PrHit[]>();
-  const earlier: Record<LoadType, SetHistoryRow[]> = { weight: [], level: [] };
+  const earlier: Record<LoadType, SetHistoryRow[]> = { weight: [], level: [], bodyweight: [] };
   const firstWorkout: Partial<Record<LoadType, string>> = {};
 
   for (const s of history) {
@@ -81,16 +81,21 @@ export function mainHit(hits: PrHit[]): PrHit {
 
 const round1 = (n: number) => formatWeight(Math.round(n * 10) / 10);
 
-/** "Heaviest: 17.5 kg (was 16 kg)", "Best est. 1RM: 23.3 kg (was 21.9 kg)", "Most reps at 16 kg+: 9 (was 8)". */
+/**
+ * "Heaviest: 17.5 kg (was 16 kg)", "Best est. 1RM: 23.3 kg (was 21.9 kg)", "Most reps at 16 kg+: 9 (was 8)";
+ * bodyweight: "Most added weight: BW +10 kg (was BW +5 kg)", "Most reps: 12 (was 10)".
+ */
 export function describeHit(h: PrHit): string {
   switch (h.kind) {
     case 'weight':
+      if (h.unit === 'bodyweight') return `Most added weight: ${formatLoad(h.value, h.unit)} (was ${formatLoad(h.previous, h.unit)})`;
       return h.unit === 'level'
         ? `Highest level: ${formatWeight(h.value)} (was ${formatWeight(h.previous)})`
         : `Heaviest: ${formatLoad(h.value, 'weight')} (was ${formatLoad(h.previous, 'weight')})`;
     case 'e1rm':
       return `Best est. 1RM: ${round1(h.value)} kg (was ${round1(h.previous)} kg)`;
     case 'reps':
+      if (h.unit === 'bodyweight' && !h.at) return `Most reps: ${h.value} (was ${h.previous})`;
       return `Most reps at ${formatLoad(h.at ?? 0, h.unit)}+: ${h.value} (was ${h.previous})`;
   }
 }
@@ -110,11 +115,17 @@ export interface ExerciseRecords {
   heaviest: RecordEntry | null;
   /** kg exercises only. */
   bestE1rm: RecordEntry | null;
+  /** Most reps in one set (value = reps), at any load. */
+  mostReps: RecordEntry | null;
   /** Best weight/level lifted for at least N reps, for each N in REP_COLUMNS (null = never). */
   repMax: { reps: number; best: RecordEntry | null }[];
 }
 
-/** All-time bests for one unit of an exercise. Ties go to the first time it was achieved. */
+/**
+ * All-time bests for one unit of an exercise. Ties go to the first time it was achieved, except
+ * the heaviest bodyweight set, where a tie on added weight goes to more reps (otherwise every
+ * plain bodyweight set ties at 0 and the "best" would just be the first set ever).
+ */
 export function summarizeRecords(history: SetHistoryRow[], unit: LoadType): ExerciseRecords {
   const sets = history.filter((s) => s.load_type === unit);
   const entry = (s: SetHistoryRow, value: number): RecordEntry => ({
@@ -125,19 +136,22 @@ export function summarizeRecords(history: SetHistoryRow[], unit: LoadType): Exer
   });
   let heaviest: RecordEntry | null = null;
   let bestE1rm: RecordEntry | null = null;
+  let mostReps: RecordEntry | null = null;
   const repMax = REP_COLUMNS.map((reps) => ({ reps, best: null as RecordEntry | null }));
 
   for (const s of sets) {
-    if (!heaviest || s.weight > heaviest.value + EPS) heaviest = entry(s, s.weight);
+    const tieOnMoreReps = unit === 'bodyweight' && heaviest && Math.abs(s.weight - heaviest.value) < EPS && s.reps > heaviest.reps;
+    if (!heaviest || s.weight > heaviest.value + EPS || tieOnMoreReps) heaviest = entry(s, s.weight);
     if (unit === 'weight') {
       const e = e1rm(s.weight, s.reps);
       if (!bestE1rm || e > bestE1rm.value + EPS) bestE1rm = entry(s, e);
     }
+    if (!mostReps || s.reps > mostReps.value) mostReps = entry(s, s.reps);
     for (const col of repMax) {
       if (s.reps >= col.reps && (!col.best || s.weight > col.best.value + EPS)) col.best = entry(s, s.weight);
     }
   }
-  return { heaviest, bestE1rm, repMax };
+  return { heaviest, bestE1rm, mostReps, repMax };
 }
 
 // ───────────────────────── Loading (uses repo functions, no SQL here) ─────────────────────────

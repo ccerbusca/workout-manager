@@ -6,6 +6,7 @@ import { exerciseStats, getExerciseName, listWorkoutHistory } from '../src/db/re
 import type { LoadType } from '../src/db/types';
 import { Empty, Loading } from '../src/components/ui';
 import { formatDate, formatLoad, formatMonthYear, formatVolume, notePreview } from '../src/lib/format';
+import { prefs } from '../src/lib/prefs';
 import { space, useTheme } from '../src/theme';
 
 /** One row of the list, whichever kind of history is shown. */
@@ -34,7 +35,7 @@ export default function HistoryScreen() {
     useCallback(() => {
       (async () => {
         if (exerciseId) {
-          const loadType: LoadType = unit === 'level' ? 'level' : 'weight';
+          const loadType: LoadType = unit === 'level' || unit === 'bodyweight' ? unit : 'weight';
           const name = await getExerciseName(db, exerciseId);
           setTitle(name ?? 'Sessions');
           const stats = await exerciseStats(db, exerciseId, loadType);
@@ -43,11 +44,13 @@ export default function HistoryScreen() {
               workoutId: s.workout_id,
               startedAt: s.started_at,
               title: formatDate(s.started_at),
-              detail: `${s.set_count} set${s.set_count === 1 ? '' : 's'} · top ${formatLoad(s.top_weight, loadType)}`,
+              detail: `${s.set_count} set${s.set_count === 1 ? '' : 's'} · ${
+                loadType === 'bodyweight' ? `max ${s.max_reps} reps` : `top ${formatLoad(s.top_weight, loadType)}`
+              }`,
             })),
           );
         } else {
-          const workouts = await listWorkoutHistory(db);
+          const workouts = await listWorkoutHistory(db, undefined, prefs.getBodyweight());
           setRows(
             workouts.map((w) => ({
               workoutId: w.id,

@@ -1,26 +1,37 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { Pressable, Switch, Text, TextInput, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { exportBackup, importBackup } from '../src/db/repo';
 import { Dialog } from '../src/components/Dialog';
+import { KeyboardScrollView } from '../src/components/KeyboardScrollView';
 import { SectionTitle } from '../src/components/ui';
 import { backupFileName, fromLocalIso, parseBackup } from '../src/lib/backup';
 import { pickTextFile, shareJsonFile } from '../src/lib/backupFiles';
-import { formatDayMonth } from '../src/lib/format';
+import { formatDayMonth, formatWeight, parseNumber } from '../src/lib/format';
 import { prefs } from '../src/lib/prefs';
 import { radius, space, THEMES, type ThemeDef, useTheme } from '../src/theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
-/** App settings: theme, weekly goal, rest timer and backup (JSON export / import). Opened from the gear in the tab header. */
+/** App settings: theme, weekly goal, bodyweight, rest timer and backup (JSON export / import). Opened from the gear in the tab header. */
 export default function SettingsScreen() {
   const { colors, font, id: themeId, setTheme } = useTheme();
   const db = useSQLiteContext();
   const [restAutoStart, setRestAutoStart] = useState(prefs.getRestAutoStart);
   const [weeklyGoal, setWeeklyGoal] = useState(prefs.getWeeklyGoal);
+  const [bodyweight, setBodyweight] = useState(() => {
+    const kg = prefs.getBodyweight();
+    return kg > 0 ? formatWeight(kg) : '';
+  });
+  /** Saved as you type; empty or invalid = not set (bodyweight sets then count 0 toward volume). */
+  const changeBodyweight = (text: string) => {
+    setBodyweight(text);
+    const kg = parseNumber(text);
+    prefs.setBodyweight(kg != null && kg > 0 ? kg : 0);
+  };
 
   const exportData = async () => {
     try {
@@ -71,7 +82,7 @@ export default function SettingsScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }}>
+    <KeyboardScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }}>
       <Stack.Screen options={{ title: 'Settings' }} />
 
       <SectionTitle>Theme</SectionTitle>
@@ -125,6 +136,51 @@ export default function SettingsScreen() {
               </Pressable>
             );
           })}
+        </View>
+      </View>
+
+      <SectionTitle>Bodyweight</SectionTitle>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: space.md,
+          padding: space.lg,
+          borderRadius: radius.lg,
+          borderWidth: 1,
+          borderColor: colors.border,
+          backgroundColor: colors.surface,
+        }}
+      >
+        <Ionicons name="body-outline" size={22} color={colors.accent} />
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={[font.body, { fontWeight: '700' }]}>Your bodyweight</Text>
+          <Text style={font.small}>
+            Bodyweight sets count toward volume as (bodyweight + added) × reps. Leave it empty to leave them out.
+          </Text>
+        </View>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            borderRadius: radius.sm,
+            borderWidth: 1,
+            borderColor: colors.border,
+            backgroundColor: colors.surfaceAlt,
+            paddingHorizontal: space.sm,
+          }}
+        >
+          <TextInput
+            value={bodyweight}
+            onChangeText={changeBodyweight}
+            placeholder="—"
+            placeholderTextColor={colors.textFaint}
+            selectionColor={colors.accent}
+            keyboardType="decimal-pad"
+            accessibilityLabel="Your bodyweight in kilograms"
+            style={[font.body, { width: 52, textAlign: 'right', paddingVertical: 8, fontWeight: '700' }]}
+          />
+          <Text style={[font.dim, { marginLeft: 4 }]}>kg</Text>
         </View>
       </View>
 
@@ -182,7 +238,7 @@ export default function SettingsScreen() {
       <Text style={[font.small, { textAlign: 'center', marginTop: space.xl * 2 }]}>
         Workout Manager {Constants.expoConfig?.version ?? ''}
       </Text>
-    </ScrollView>
+    </KeyboardScrollView>
   );
 }
 

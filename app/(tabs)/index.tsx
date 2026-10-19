@@ -18,6 +18,7 @@ import { countRecordsByWorkout } from '../../src/lib/records';
 import type { Routine, Workout, WorkoutSummary } from '../../src/db/types';
 import { Button, Card, Empty, SectionTitle } from '../../src/components/ui';
 import { formatDate, formatTime, formatVolume, notePreview } from '../../src/lib/format';
+import { prefs } from '../../src/lib/prefs';
 import { space, useTheme } from '../../src/theme';
 
 export default function TrainScreen() {
@@ -35,7 +36,7 @@ export default function TrainScreen() {
       (async () => {
         setActive(await getActiveWorkout(db));
         setRoutines(await listRoutines(db));
-        const last = await listWorkoutHistory(db, 5);
+        const last = await listWorkoutHistory(db, 5, prefs.getBodyweight());
         setRecent(last);
         setPrCounts(await countRecordsByWorkout(db, last.map((w) => w.id)));
         setWorkoutCount(await countWorkoutHistory(db));

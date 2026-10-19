@@ -30,6 +30,9 @@ export function RecordsCard(props: { exerciseId: string; unit: LoadType; reloadK
 
   if (!rec?.heaviest) return null;
   const level = props.unit === 'level';
+  const bodyweight = props.unit === 'bodyweight';
+  // Pure bodyweight has nothing to put in the rep-max table (every cell would be 0)
+  const showRepTable = !bodyweight || rec.repMax.some((c) => (c.best?.value ?? 0) > 0);
   const open = (e: RecordEntry | null) => e && router.push(`/workout/${e.workoutId}`);
 
   return (
@@ -51,11 +54,19 @@ export function RecordsCard(props: { exerciseId: string; unit: LoadType; reloadK
       <Text style={[font.small, { letterSpacing: 1, fontWeight: '700' }]}>🏆 RECORDS</Text>
 
       <RecordRow
-        label={level ? 'Highest level' : 'Heaviest'}
+        label={bodyweight ? 'Best set' : level ? 'Highest level' : 'Heaviest'}
         value={`${formatLoad(rec.heaviest.value, props.unit)} × ${rec.heaviest.reps}`}
         date={rec.heaviest.startedAt}
         onPress={() => open(rec.heaviest)}
       />
+      {bodyweight && rec.mostReps ? (
+        <RecordRow
+          label="Most reps"
+          value={`${rec.mostReps.value} reps`}
+          date={rec.mostReps.startedAt}
+          onPress={() => open(rec.mostReps)}
+        />
+      ) : null}
       {rec.bestE1rm ? (
         <RecordRow
           label="Est. 1RM"
@@ -65,34 +76,42 @@ export function RecordsCard(props: { exerciseId: string; unit: LoadType; reloadK
         />
       ) : null}
 
-      {/* Rep maxes: best weight/level done for at least N reps */}
-      <View style={{ marginTop: space.xs, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
-        <View style={{ flexDirection: 'row', backgroundColor: colors.surfaceAlt, paddingVertical: 6 }}>
-          <Text style={[font.small, { width: 52, paddingLeft: space.sm, fontWeight: '700' }]}>REPS</Text>
-          {rec.repMax.map((c) => (
-            <Text key={c.reps} style={[font.small, { flex: 1, textAlign: 'center', fontWeight: '700' }]}>
-              {c.reps}
-            </Text>
-          ))}
-        </View>
-        <View style={{ flexDirection: 'row', paddingVertical: 8, borderTopWidth: 1, borderTopColor: colors.border }}>
-          <Text style={[font.small, { width: 52, paddingLeft: space.sm, fontWeight: '700' }]}>{level ? 'LEVEL' : 'KG'}</Text>
-          {rec.repMax.map((c) => (
-            <Pressable key={c.reps} onPress={() => open(c.best)} disabled={!c.best} style={{ flex: 1 }} hitSlop={4}>
-              <Text
-                style={[
-                  font.body,
-                  { textAlign: 'center', fontWeight: '700', fontVariant: ['tabular-nums'] },
-                  !c.best && { color: colors.textFaint, fontWeight: '400' },
-                ]}
-              >
-                {c.best ? formatWeight(c.best.value) : '—'}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      </View>
-      <Text style={font.small}>Best {level ? 'level' : 'weight'} you did for at least that many reps. Tap a record to open that workout.</Text>
+      {/* Rep maxes: best weight/level (added kg for bodyweight) done for at least N reps */}
+      {showRepTable ? (
+        <>
+          <View style={{ marginTop: space.xs, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}>
+            <View style={{ flexDirection: 'row', backgroundColor: colors.surfaceAlt, paddingVertical: 6 }}>
+              <Text style={[font.small, { width: 52, paddingLeft: space.sm, fontWeight: '700' }]}>REPS</Text>
+              {rec.repMax.map((c) => (
+                <Text key={c.reps} style={[font.small, { flex: 1, textAlign: 'center', fontWeight: '700' }]}>
+                  {c.reps}
+                </Text>
+              ))}
+            </View>
+            <View style={{ flexDirection: 'row', paddingVertical: 8, borderTopWidth: 1, borderTopColor: colors.border }}>
+              <Text style={[font.small, { width: 52, paddingLeft: space.sm, fontWeight: '700' }]}>{level ? 'LEVEL' : bodyweight ? '+KG' : 'KG'}</Text>
+              {rec.repMax.map((c) => (
+                <Pressable key={c.reps} onPress={() => open(c.best)} disabled={!c.best} style={{ flex: 1 }} hitSlop={4}>
+                  <Text
+                    style={[
+                      font.body,
+                      { textAlign: 'center', fontWeight: '700', fontVariant: ['tabular-nums'] },
+                      !c.best && { color: colors.textFaint, fontWeight: '400' },
+                    ]}
+                  >
+                    {c.best ? formatWeight(c.best.value) : '—'}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+          <Text style={font.small}>
+            Best {level ? 'level' : bodyweight ? 'added weight' : 'weight'} you did for at least that many reps. Tap a record to open that workout.
+          </Text>
+        </>
+      ) : (
+        <Text style={font.small}>Tap a record to open that workout.</Text>
+      )}
     </View>
   );
 }

@@ -29,6 +29,7 @@ import {
   formatTime,
   formatVolume,
 } from '../../src/lib/format';
+import { prefs } from '../../src/lib/prefs';
 import { radius, space, useTheme } from '../../src/theme';
 import { KeyboardScrollView } from '../../src/components/KeyboardScrollView';
 
@@ -273,12 +274,13 @@ function WorkoutOverview({
   );
 }
 
-/** Compact KG | LVL switch for an exercise row. Sets keep the unit they were logged in. */
+/** Compact KG | LVL | BW switch for an exercise row. Sets keep the unit they were logged in. */
 function UnitToggle(props: { value: LoadType; onChange: (v: LoadType) => void }) {
   const { colors } = useTheme();
   const options: { value: LoadType; label: string }[] = [
     { value: 'weight', label: 'KG' },
     { value: 'level', label: 'LVL' },
+    { value: 'bodyweight', label: 'BW' },
   ];
   return (
     <View
@@ -340,7 +342,14 @@ function WorkoutSummaryView({ workout, onEdit }: { workout: Workout; onEdit: () 
     g.sets.push(r);
     byExercise.set(r.exercise_id, g);
   }
-  const volume = rows.reduce((sum, r) => sum + (r.load_type === 'weight' ? r.weight * r.reps : 0), 0);
+  // Same rule as SET_VOLUME in repo.ts: bodyweight sets count only once the bodyweight is set
+  const bodyweight = prefs.getBodyweight();
+  const volume = rows.reduce(
+    (sum, r) =>
+      sum +
+      (r.load_type === 'weight' ? r.weight * r.reps : r.load_type === 'bodyweight' && bodyweight > 0 ? (bodyweight + r.weight) * r.reps : 0),
+    0,
+  );
 
   const remove = () => {
     Dialog.alert('Delete this workout?', 'It will be removed from your history and charts.', [

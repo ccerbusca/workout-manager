@@ -78,9 +78,11 @@ export function ExercisePicker(props: {
               })}
             >
               <Text style={font.body}>{item.name}</Text>
-              {item.muscle_groups || item.load_type === 'level' ? (
+              {item.muscle_groups || item.load_type !== 'weight' ? (
                 <Text style={font.small}>
-                  {[item.muscle_groups, item.load_type === 'level' ? 'machine level' : null].filter(Boolean).join(' · ')}
+                  {[item.muscle_groups, item.load_type === 'level' ? 'machine level' : item.load_type === 'bodyweight' ? 'bodyweight' : null]
+                    .filter(Boolean)
+                    .join(' · ')}
                 </Text>
               ) : null}
             </Pressable>

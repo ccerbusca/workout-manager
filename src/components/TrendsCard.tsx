@@ -3,6 +3,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSQLiteContext } from 'expo-sqlite';
 import { listWorkoutTrendLog } from '../db/repo';
 import { formatDayMonth, formatDuration, formatMonthYear, formatVolume } from '../lib/format';
+import { prefs } from '../lib/prefs';
 import { trendHeadline, trendSeries, type TrendBucket, type TrendMetric, type TrendPoint, type TrendWorkout } from '../lib/trends';
 import { radius, space, useTheme } from '../theme';
 import { Segmented } from './ui';
@@ -51,7 +52,7 @@ export function TrendsCard(props: { reloadKey?: unknown }) {
   const [selected, setSelected] = useState<number | null>(null);
 
   useEffect(() => {
-    listWorkoutTrendLog(db).then(setLog);
+    listWorkoutTrendLog(db, prefs.getBodyweight()).then(setLog);
   }, [db, props.reloadKey]);
   // A different metric or grouping shows different periods: go back to the headline
   useEffect(() => setSelected(null), [metric, bucket]);
