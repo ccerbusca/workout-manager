@@ -27,21 +27,60 @@ import type {
 
 // ───────────────────────── Seed ─────────────────────────
 
-// Keep in sync with migration v6, which regroups these on databases seeded before v5
+// Seeded into an empty database only. The first 13 date from the original seed (migration v6
+// regroups those on databases seeded before v5; "Biceps Curl" there is the old name of
+// "Dumbbell Curl"). Most of the rest come from the user's workout history, under their proper
+// names, so importing imports/workout-history-corrected.json after a fresh install merges into
+// these by name. Ten more are popular lifts that filled gaps (no fly, hammer curl, glutes, abs...).
 const DEFAULT_EXERCISES: [string, string[]][] = [
+  // Push
   ['Bench Press', ['Chest', 'Shoulders', 'Triceps']],
+  ['Dumbbell Bench Press', ['Chest', 'Shoulders', 'Triceps']],
+  ['Incline Bench Press', ['Chest', 'Shoulders', 'Triceps']],
   ['Incline Dumbbell Press', ['Chest', 'Shoulders', 'Triceps']],
+  ['Cable Fly', ['Chest']],
+  ['Dip', ['Chest', 'Shoulders', 'Triceps']],
   ['Overhead Press', ['Shoulders', 'Triceps']],
+  ['Shoulder Press', ['Shoulders', 'Triceps']],
+  ['Dumbbell Shoulder Press', ['Shoulders', 'Triceps']],
   ['Lateral Raise', ['Shoulders']],
-  ['Squat', ['Quads', 'Glutes']],
-  ['Romanian Deadlift', ['Hamstrings', 'Glutes', 'Lower back']],
-  ['Leg Press', ['Quads', 'Glutes']],
-  ['Deadlift', ['Hamstrings', 'Glutes', 'Lower back', 'Upper back']],
-  ['Pull-up', ['Lats', 'Biceps']],
-  ['Barbell Row', ['Upper back', 'Lats', 'Biceps']],
-  ['Lat Pulldown', ['Lats', 'Biceps']],
-  ['Biceps Curl', ['Biceps']],
+  ['Seated Lateral Raise', ['Shoulders']],
+  ['Rear Delt Fly', ['Shoulders', 'Upper back']],
   ['Triceps Pushdown', ['Triceps']],
+  ['Overhead Triceps Extension', ['Triceps']],
+  ['Dumbbell Skull Crusher', ['Triceps']],
+  // Pull
+  ['Pull-up', ['Lats', 'Biceps']],
+  ['Chin-up', ['Lats', 'Biceps']],
+  ['Lat Pulldown', ['Lats', 'Biceps']],
+  ['Underhand Lat Pulldown', ['Lats', 'Biceps']],
+  ['Barbell Row', ['Upper back', 'Lats', 'Biceps']],
+  ['Underhand Barbell Row', ['Upper back', 'Lats', 'Biceps']],
+  ['Dumbbell Row', ['Upper back', 'Lats', 'Biceps']],
+  ['Seated Cable Row', ['Upper back', 'Lats', 'Biceps']],
+  ['Chest-Supported Row', ['Upper back', 'Lats', 'Biceps']],
+  ['Kroc Row', ['Upper back', 'Lats', 'Biceps', 'Traps']],
+  ['Face Pull', ['Shoulders', 'Upper back', 'Traps']],
+  ['Dumbbell Shrug', ['Traps']],
+  ['Dumbbell Curl', ['Biceps']],
+  ['Barbell Curl', ['Biceps']],
+  ['Hammer Curl', ['Biceps', 'Forearms']],
+  ['Preacher Curl', ['Biceps']],
+  ['Preacher Hammer Curl', ['Biceps', 'Forearms']],
+  ['Bayesian Cable Curl', ['Biceps']],
+  ['Reverse Curl', ['Forearms', 'Biceps']],
+  // Legs
+  ['Squat', ['Quads', 'Glutes']],
+  ['Leg Press', ['Quads', 'Glutes']],
+  ['Bulgarian Split Squat', ['Quads', 'Glutes']],
+  ['Hip Thrust', ['Glutes', 'Hamstrings']],
+  ['Leg Extension', ['Quads']],
+  ['Romanian Deadlift', ['Hamstrings', 'Glutes', 'Lower back']],
+  ['Deadlift', ['Hamstrings', 'Glutes', 'Lower back', 'Upper back']],
+  ['Leg Curl', ['Hamstrings']],
+  ['Calf Raise', ['Calves']],
+  // Core
+  ['Hanging Leg Raise', ['Abs']],
 ];
 
 export async function seedIfEmpty(db: SQLiteDatabase): Promise<void> {
@@ -736,6 +775,15 @@ export async function importBackup(db: SQLiteDatabase, file: BackupFile): Promis
       }
       if (row) {
         result.exercisesMatched++;
+        // A matched exercise with nothing logged yet (e.g. a default seeded on a fresh install) takes
+        // the file's unit, so importing history done in levels doesn't leave it on kg
+        if (e.loadType && e.loadType !== row.load_type) {
+          const used = await db.getFirstAsync('SELECT 1 FROM workout_sets WHERE exercise_id = ? AND deleted_at IS NULL LIMIT 1', row.id);
+          if (!used) {
+            await db.runAsync('UPDATE exercises SET load_type = ?, updated_at = ? WHERE id = ?', e.loadType, t, row.id);
+            row = { ...row, load_type: e.loadType };
+          }
+        }
       } else {
         const id = e.id ?? newId();
         const loadType = e.loadType ?? 'weight';
