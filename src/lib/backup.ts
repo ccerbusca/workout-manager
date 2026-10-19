@@ -109,9 +109,11 @@ export function parseBackup(json: unknown): BackupFile {
             const so = obj(s, sp);
             const weight = num(so.weight, `${sp}.weight`);
             const reps = num(so.reps, `${sp}.reps`);
-            if (weight < 0) fail(`${sp}.weight`, 'must be 0 or more');
+            const setUnit = loadType(so.loadType, `${sp}.loadType`);
+            // Negative weight = machine assistance, only meaningful on a bodyweight set
+            if (weight < 0 && setUnit !== 'bodyweight') fail(`${sp}.weight`, 'must be 0 or more (negative only on bodyweight sets)');
             if (reps < 1) fail(`${sp}.reps`, 'must be at least 1');
-            return { id: optStr(so.id, `${sp}.id`), weight, reps: Math.round(reps), loadType: loadType(so.loadType, `${sp}.loadType`) };
+            return { id: optStr(so.id, `${sp}.id`), weight, reps: Math.round(reps), loadType: setUnit };
           }),
         };
       }),

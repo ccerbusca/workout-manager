@@ -35,7 +35,7 @@ const LEVEL_METRICS: typeof WEIGHT_METRICS = [
 const BODYWEIGHT_METRICS: typeof WEIGHT_METRICS = [
   { key: 'maxReps', label: 'Max reps', unit: 'reps', help: 'Most reps in a single set in the session.' },
   { key: 'reps', label: 'Total reps', unit: 'reps', help: 'Total reps across all sets in the session.' },
-  { key: 'top', label: 'Added', unit: 'kg', help: 'Most weight added on top of bodyweight in the session (0 = bodyweight only).' },
+  { key: 'top', label: 'Added', unit: 'kg', help: 'Most weight added on top of bodyweight in the session (0 = bodyweight only, negative = machine assistance).' },
 ];
 
 const UNIT_OPTIONS: Record<LoadType, string> = { weight: 'Weight (kg)', level: 'Machine level', bodyweight: 'Bodyweight' };

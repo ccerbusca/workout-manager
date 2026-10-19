@@ -347,7 +347,7 @@ function WorkoutSummaryView({ workout, onEdit }: { workout: Workout; onEdit: () 
   const volume = rows.reduce(
     (sum, r) =>
       sum +
-      (r.load_type === 'weight' ? r.weight * r.reps : r.load_type === 'bodyweight' && bodyweight > 0 ? (bodyweight + r.weight) * r.reps : 0),
+      (r.load_type === 'weight' ? r.weight * r.reps : r.load_type === 'bodyweight' && bodyweight > 0 ? Math.max(bodyweight + r.weight, 0) * r.reps : 0),
     0,
   );
 

@@ -10,7 +10,8 @@ import { formatLoad, formatWeight } from './format';
  * A set is a record when it beats every EARLIER set of the same exercise in the same unit
  * (kg, levels and bodyweight are never compared). "Earlier" = earlier workout, or earlier in the same workout.
  * Three kinds:
- *  - weight: heaviest weight (or highest level, or most added weight on a bodyweight exercise) ever
+ *  - weight: heaviest weight (or highest level, or most added weight on a bodyweight exercise,
+ *            where less assistance, i.e. a less negative number, also counts as heavier) ever
  *  - e1rm:   best estimated one-rep max (Epley), kg only
  *  - reps:   more reps than ever at this weight/level or heavier
  * To avoid noise, nothing counts as a record in the first workout an exercise was done in (per
@@ -83,12 +84,16 @@ const round1 = (n: number) => formatWeight(Math.round(n * 10) / 10);
 
 /**
  * "Heaviest: 17.5 kg (was 16 kg)", "Best est. 1RM: 23.3 kg (was 21.9 kg)", "Most reps at 16 kg+: 9 (was 8)";
- * bodyweight: "Most added weight: BW +10 kg (was BW +5 kg)", "Most reps: 12 (was 10)".
+ * bodyweight: "Most added weight: BW +10 kg (was BW +5 kg)", "Least assistance: BW −20 kg (was BW −30 kg)",
+ * "Most reps: 12 (was 10)", "Most reps at BW −20 kg or less assistance: 9 (was 8)".
  */
 export function describeHit(h: PrHit): string {
   switch (h.kind) {
     case 'weight':
-      if (h.unit === 'bodyweight') return `Most added weight: ${formatLoad(h.value, h.unit)} (was ${formatLoad(h.previous, h.unit)})`;
+      if (h.unit === 'bodyweight') {
+        const what = h.value > 0 ? 'Most added weight' : 'Least assistance';
+        return `${what}: ${formatLoad(h.value, h.unit)} (was ${formatLoad(h.previous, h.unit)})`;
+      }
       return h.unit === 'level'
         ? `Highest level: ${formatWeight(h.value)} (was ${formatWeight(h.previous)})`
         : `Heaviest: ${formatLoad(h.value, 'weight')} (was ${formatLoad(h.previous, 'weight')})`;
@@ -96,6 +101,8 @@ export function describeHit(h: PrHit): string {
       return `Best est. 1RM: ${round1(h.value)} kg (was ${round1(h.previous)} kg)`;
     case 'reps':
       if (h.unit === 'bodyweight' && !h.at) return `Most reps: ${h.value} (was ${h.previous})`;
+      if (h.unit === 'bodyweight' && (h.at ?? 0) < 0)
+        return `Most reps at ${formatLoad(h.at ?? 0, h.unit)} or less assistance: ${h.value} (was ${h.previous})`;
       return `Most reps at ${formatLoad(h.at ?? 0, h.unit)}+: ${h.value} (was ${h.previous})`;
   }
 }

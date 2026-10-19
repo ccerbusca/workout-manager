@@ -47,9 +47,9 @@ export function formatWeight(w: number): string {
 
 import type { LoadType } from '../db/types';
 
-/** "80 kg", "level 7", "BW" (bodyweight only) or "BW +10 kg" (with added weight) */
+/** "80 kg", "level 7", "BW" (bodyweight only), "BW +10 kg" (added weight) or "BW −20 kg" (machine assistance) */
 export function formatLoad(v: number, t: LoadType): string {
-  if (t === 'bodyweight') return v > 0 ? `BW +${formatWeight(v)} kg` : 'BW';
+  if (t === 'bodyweight') return v > 0 ? `BW +${formatWeight(v)} kg` : v < 0 ? `BW −${formatWeight(-v)} kg` : 'BW';
   return t === 'level' ? `level ${formatWeight(v)}` : `${formatWeight(v)} kg`;
 }
 

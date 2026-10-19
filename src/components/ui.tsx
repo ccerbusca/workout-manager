@@ -127,13 +127,16 @@ export function Stepper(props: {
   onChange: (v: string) => void;
   step: number;
   decimal?: boolean;
+  /** Let − go below 0 (bodyweight assistance). Otherwise 0 is the floor. */
+  allowNegative?: boolean;
 }) {
   const styles = useThemedStyles(makeStyles);
   const { colors, font } = useTheme();
-  const { label, value, onChange, step, decimal } = props;
+  const { label, value, onChange, step, decimal, allowNegative } = props;
   const bump = (dir: 1 | -1) => {
     const n = Number(value.replace(',', '.')) || 0;
-    const next = Math.max(0, Math.round((n + dir * step) * 100) / 100);
+    const raw = Math.round((n + dir * step) * 100) / 100;
+    const next = allowNegative ? raw : Math.max(0, raw);
     onChange(String(next));
   };
   return (
@@ -148,7 +151,8 @@ export function Stepper(props: {
         <TextInput
           value={value}
           onChangeText={onChange}
-          keyboardType={decimal ? 'decimal-pad' : 'number-pad'}
+          // On Android 'numeric' is the only number keyboard with a minus key
+          keyboardType={allowNegative ? 'numeric' : decimal ? 'decimal-pad' : 'number-pad'}
           selectTextOnFocus
           selectionColor={colors.accent}
           style={styles.stepInput}

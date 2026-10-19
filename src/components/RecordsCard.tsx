@@ -32,7 +32,7 @@ export function RecordsCard(props: { exerciseId: string; unit: LoadType; reloadK
   const level = props.unit === 'level';
   const bodyweight = props.unit === 'bodyweight';
   // Pure bodyweight has nothing to put in the rep-max table (every cell would be 0)
-  const showRepTable = !bodyweight || rec.repMax.some((c) => (c.best?.value ?? 0) > 0);
+  const showRepTable = !bodyweight || rec.repMax.some((c) => (c.best?.value ?? 0) !== 0);
   const open = (e: RecordEntry | null) => e && router.push(`/workout/${e.workoutId}`);
 
   return (
@@ -89,7 +89,7 @@ export function RecordsCard(props: { exerciseId: string; unit: LoadType; reloadK
               ))}
             </View>
             <View style={{ flexDirection: 'row', paddingVertical: 8, borderTopWidth: 1, borderTopColor: colors.border }}>
-              <Text style={[font.small, { width: 52, paddingLeft: space.sm, fontWeight: '700' }]}>{level ? 'LEVEL' : bodyweight ? '+KG' : 'KG'}</Text>
+              <Text style={[font.small, { width: 52, paddingLeft: space.sm, fontWeight: '700' }]}>{level ? 'LEVEL' : bodyweight ? '±KG' : 'KG'}</Text>
               {rec.repMax.map((c) => (
                 <Pressable key={c.reps} onPress={() => open(c.best)} disabled={!c.best} style={{ flex: 1 }} hitSlop={4}>
                   <Text
@@ -106,7 +106,7 @@ export function RecordsCard(props: { exerciseId: string; unit: LoadType; reloadK
             </View>
           </View>
           <Text style={font.small}>
-            Best {level ? 'level' : bodyweight ? 'added weight' : 'weight'} you did for at least that many reps. Tap a record to open that workout.
+            Best {level ? 'level' : bodyweight ? 'added weight (negative = assistance)' : 'weight'} you did for at least that many reps. Tap a record to open that workout.
           </Text>
         </>
       ) : (

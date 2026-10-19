@@ -466,11 +466,12 @@ export async function deleteWorkout(db: SQLiteDatabase, id: string): Promise<voi
 
 /**
  * kg volume of a set, as SQL over `s` (workout_sets): weight × reps for kg sets, and
- * (bodyweight + added) × reps for bodyweight sets when the user's bodyweight is known (the one
- * `?` parameter; 0 = unknown, so bodyweight sets count 0). Level sets never count.
+ * (bodyweight + added) × reps for bodyweight sets when the user's bodyweight is known (the
+ * bodyweight is bound twice; 0 = unknown, so bodyweight sets count 0). Added weight is negative
+ * for machine assistance, and the load never goes below 0. Level sets never count.
  */
 const SET_VOLUME = `CASE WHEN s.load_type = 'weight' THEN s.weight * s.reps
-                        WHEN s.load_type = 'bodyweight' THEN (CASE WHEN ? > 0 THEN ? + s.weight ELSE 0 END) * s.reps
+                        WHEN s.load_type = 'bodyweight' THEN (CASE WHEN ? > 0 THEN MAX(? + s.weight, 0) ELSE 0 END) * s.reps
                         ELSE 0 END`;
 
 /** Finished workouts, newest first. Omit `limit` for all of them. `bodyweight` (kg, 0 = unknown) feeds volume. */

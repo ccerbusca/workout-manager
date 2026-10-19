@@ -112,10 +112,14 @@ export default function ExerciseLogScreen() {
   const logSet = async () => {
     const w = parseNumber(weight);
     const r = parseNumber(reps);
-    if (w == null || r == null || r <= 0) {
+    if (w == null || r == null || r <= 0 || (w < 0 && loadType !== 'bodyweight')) {
       Dialog.alert(
         'Check your numbers',
-        `Enter ${loadType === 'level' ? 'a level' : loadType === 'bodyweight' ? 'the added weight (0 for none)' : 'a weight'} and at least 1 rep.`,
+        `Enter ${
+          loadType === 'level' ? 'a level'
+          : loadType === 'bodyweight' ? 'the added weight (0 for none, negative for machine assistance)'
+          : 'a weight'
+        } and at least 1 rep.`,
       );
       return;
     }
@@ -251,11 +255,16 @@ export default function ExerciseLogScreen() {
         <Card style={{ marginTop: space.lg, gap: space.md }}>
           <View style={{ flexDirection: 'row', gap: space.md }}>
             <Stepper
-              label={loadType === 'level' ? 'level' : loadType === 'bodyweight' ? 'added kg' : 'kg'}
+              label={
+                loadType === 'level' ? 'level'
+                : loadType === 'bodyweight' ? ((parseNumber(weight) ?? 0) < 0 ? 'assist kg (−)' : 'added kg')
+                : 'kg'
+              }
               value={weight}
               onChange={setWeight}
               step={loadType === 'level' ? 1 : 2.5}
               decimal={loadType !== 'level'}
+              allowNegative={loadType === 'bodyweight'}
             />
             <Stepper label="reps" value={reps} onChange={setReps} step={1} />
           </View>
