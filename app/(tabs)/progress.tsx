@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
@@ -52,8 +52,23 @@ export default function ProgressScreen() {
   // so tapping it again for the same exercise (after picking another one here) still applies it.
   const { exerciseId: requestedId, at } = useLocalSearchParams<{ exerciseId?: string; at?: string }>();
   useEffect(() => {
-    if (requestedId) setSelectedId(requestedId);
-  }, [requestedId, at]);
+    if (!requestedId) return;
+    setSelectedId(requestedId);
+    // ...and scrolls down to the exercise panel. The Overview cards above it may still be loading
+    // and changing height, so for a moment every new position of the panel scrolls again (see the
+    // onLayout below), until the user touches the list or it settles.
+    scrollPending.current = true;
+    scrollToExercise();
+    const t = setTimeout(() => (scrollPending.current = false), 1500);
+    return () => clearTimeout(t);
+  }, [requestedId, at]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const scrollRef = useRef<ScrollView>(null);
+  const exerciseY = useRef<number | null>(null);
+  const scrollPending = useRef(false);
+  const scrollToExercise = () => {
+    if (scrollPending.current && exerciseY.current != null) scrollRef.current?.scrollTo({ y: exerciseY.current, animated: true });
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -106,14 +121,25 @@ export default function ProgressScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }}>
+    <ScrollView
+      ref={scrollRef}
+      contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }}
+      onScrollBeginDrag={() => (scrollPending.current = false)}
+    >
       <SectionTitle>Overview</SectionTitle>
       <ConsistencyCard reloadKey={focusKey} />
       <MuscleBalanceCard reloadKey={focusKey} />
       <TrendsCard reloadKey={focusKey} />
 
       {/* Everything about the chosen exercise lives in one panel, headed by the exercise picker */}
-      <SectionTitle>Exercise</SectionTitle>
+      <View
+        onLayout={(e) => {
+          exerciseY.current = e.nativeEvent.layout.y;
+          scrollToExercise();
+        }}
+      >
+        <SectionTitle>Exercise</SectionTitle>
+      </View>
       <View
         style={{
           borderRadius: radius.lg,
