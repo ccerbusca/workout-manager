@@ -231,7 +231,7 @@ function AddExerciseCard(props: {
       <Collapsible open={open}>
         <View style={{ gap: space.sm, paddingTop: space.md }}>
           <View style={{ height: 1, backgroundColor: colors.border, marginBottom: space.xs }} />
-          <Field placeholder="Name, e.g. Hip Thrust" value={name} onChangeText={setName} />
+          <Field placeholder="Name, e.g. Hip Thrusts" value={name} onChangeText={setName} />
           <MuscleGroupSelect options={props.muscleGroups} selected={groupIds} onChange={setGroupIds} onCreate={props.onCreateGroup} />
           <View style={{ flexDirection: 'row', gap: space.sm }}>
             <Button title="Add" onPress={add} disabled={!name.trim()} style={{ flex: 1 }} />
