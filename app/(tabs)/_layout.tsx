@@ -38,6 +38,9 @@ export default function TabsLayout() {
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.textFaint,
         sceneStyle: { backgroundColor: colors.bg },
+        // A quick cross-fade between tabs (the default is an instant swap, which felt stiff;
+        // 'shift' was tried and the fade felt better)
+        animation: 'fade',
       }}
     >
       <Tabs.Screen name="index" options={{ title: 'Train', tabBarIcon: icon('barbell-outline') }} />
