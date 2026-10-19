@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import Animated, { useAnimatedRef } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInDown, useAnimatedRef } from 'react-native-reanimated';
 import Sortable from 'react-native-sortables';
 import { Dialog } from '../../src/components/Dialog';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
@@ -30,11 +30,20 @@ export default function RoutineEditor() {
   const [name, setName] = useState('');
   const [items, setItems] = useState<RoutineExercise[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Nothing is shown until the first load: otherwise the empty state flashes, then the list pops
+  // in and pushes the buttons down. After it, the content fades in and the cards slide in one by
+  // one. Exercises added later get react-native-sortables' own entering animation instead.
+  const [loaded, setLoaded] = useState(false);
+  const firstLoad = useRef(true);
+  useEffect(() => {
+    if (loaded) firstLoad.current = false;
+  }, [loaded]);
 
   const load = useCallback(async () => {
-    const r = await getRoutine(db, id);
+    const [r, list] = await Promise.all([getRoutine(db, id), listRoutineExercises(db, id)]);
     if (r) setName(r.name);
-    setItems(await listRoutineExercises(db, id));
+    setItems(list);
+    setLoaded(true);
   }, [db, id]);
 
   useEffect(() => {
@@ -93,44 +102,50 @@ export default function RoutineEditor() {
         contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2 }}
         keyboardShouldPersistTaps="handled"
       >
-        <Field label="Name" value={name} onChangeText={setName} onBlur={saveName} onSubmitEditing={saveName} />
+        {loaded ? (
+          <Animated.View entering={FadeIn.duration(200)}>
+            <Field label="Name" value={name} onChangeText={setName} onBlur={saveName} onSubmitEditing={saveName} />
 
-        <SectionTitle right={<Button title="+ Add" variant="ghost" onPress={() => setPickerOpen(true)} />}>
-          Exercises
-        </SectionTitle>
+            <SectionTitle right={<Button title="+ Add" variant="ghost" onPress={() => setPickerOpen(true)} />}>
+              Exercises
+            </SectionTitle>
 
-        {items.length === 0 ? (
-          <Card>
-            <Empty title="No exercises yet" hint="Add the exercises you do in this routine." />
-            <Button title="Add exercise" onPress={() => setPickerOpen(true)} />
-          </Card>
-        ) : (
-          <Sortable.Grid
-            columns={1}
-            rowGap={space.sm}
-            data={items}
-            keyExtractor={(item) => item.id}
-            customHandle
-            scrollableRef={scrollRef}
-            onDragEnd={onReorder}
-            renderItem={({ item, index }) => (
-              <Card style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: space.md }}>
-                <Text style={[font.dim, { width: 24 }]}>{index + 1}</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={font.body}>{item.name}</Text>
-                  {item.muscle_groups ? <Text style={font.small}>{item.muscle_groups}</Text> : null}
-                </View>
-                <IconBtn name="close" onPress={() => remove(item)} color={colors.danger} />
-                <DragHandle />
+            {items.length === 0 ? (
+              <Card>
+                <Empty title="No exercises yet" hint="Add the exercises you do in this routine." />
+                <Button title="Add exercise" onPress={() => setPickerOpen(true)} />
               </Card>
+            ) : (
+              <Sortable.Grid
+                columns={1}
+                rowGap={space.sm}
+                data={items}
+                keyExtractor={(item) => item.id}
+                customHandle
+                scrollableRef={scrollRef}
+                onDragEnd={onReorder}
+                renderItem={({ item, index }) => (
+                  <Animated.View entering={firstLoad.current ? FadeInDown.duration(240).delay(index * 40) : undefined}>
+                    <Card style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: space.md }}>
+                      <Text style={[font.dim, { width: 24 }]}>{index + 1}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={font.body}>{item.name}</Text>
+                        {item.muscle_groups ? <Text style={font.small}>{item.muscle_groups}</Text> : null}
+                      </View>
+                      <IconBtn name="close" onPress={() => remove(item)} color={colors.danger} />
+                      <DragHandle />
+                    </Card>
+                  </Animated.View>
+                )}
+              />
             )}
-          />
-        )}
 
-        <View style={{ gap: space.sm, marginTop: space.xl }}>
-          <Button title="Start this workout" big onPress={start} disabled={items.length === 0} />
-          <Button title="Delete routine" variant="danger" onPress={confirmDelete} />
-        </View>
+            <View style={{ gap: space.sm, marginTop: space.xl }}>
+              <Button title="Start this workout" big onPress={start} disabled={items.length === 0} />
+              <Button title="Delete routine" variant="danger" onPress={confirmDelete} />
+            </View>
+          </Animated.View>
+        ) : null}
       </Animated.ScrollView>
 
       <ExercisePicker
