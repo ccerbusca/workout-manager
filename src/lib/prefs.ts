@@ -39,4 +39,15 @@ export const prefs = {
     return Number.isInteger(n) && n >= 1 && n <= 7 ? n : 3;
   },
   setWeeklyGoal: (n: number) => write('consistency.weeklyGoal', String(n)),
+
+  /** Muscle-group sections collapsed on the Exercises tab, by group name ("Other" included). */
+  getCollapsedGroups: (): string[] => {
+    try {
+      const v = JSON.parse(read('exercises.collapsedGroups') ?? '[]');
+      return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
+  },
+  setCollapsedGroups: (names: string[]) => write('exercises.collapsedGroups', JSON.stringify(names)),
 };

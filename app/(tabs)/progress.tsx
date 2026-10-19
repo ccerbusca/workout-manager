@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import {
   exerciseStats,
@@ -48,6 +48,12 @@ export default function ProgressScreen() {
   // Units this exercise has sets in, and which one the chart shows
   const [units, setUnits] = useState<LoadType[]>([]);
   const [loadType, setLoadType] = useState<LoadType>('weight');
+  // "See progress" on the Exercises tab opens this tab on one exercise. `at` changes on every tap,
+  // so tapping it again for the same exercise (after picking another one here) still applies it.
+  const { exerciseId: requestedId, at } = useLocalSearchParams<{ exerciseId?: string; at?: string }>();
+  useEffect(() => {
+    if (requestedId) setSelectedId(requestedId);
+  }, [requestedId, at]);
 
   useFocusEffect(
     useCallback(() => {

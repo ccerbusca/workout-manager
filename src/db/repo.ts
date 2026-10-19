@@ -282,6 +282,19 @@ export function listRoutineExercises(db: SQLiteDatabase, routineId: string): Pro
   );
 }
 
+/** Names of the routines that include this exercise, in routine order. */
+export async function listRoutineNamesForExercise(db: SQLiteDatabase, exerciseId: string): Promise<string[]> {
+  const rows = await db.getAllAsync<{ name: string }>(
+    `SELECT DISTINCT r.name, r.position
+     FROM routine_exercises re
+     JOIN routines r ON r.id = re.routine_id AND r.deleted_at IS NULL
+     WHERE re.exercise_id = ? AND re.deleted_at IS NULL
+     ORDER BY r.position, r.name COLLATE NOCASE`,
+    exerciseId,
+  );
+  return rows.map((r) => r.name);
+}
+
 export async function addExerciseToRoutine(
   db: SQLiteDatabase,
   routineId: string,
