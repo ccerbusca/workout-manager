@@ -13,7 +13,7 @@ import {
   previousSets,
   updateSet,
 } from '../../../src/db/repo';
-import type { LoadType, Workout, WorkoutSet } from '../../../src/db/types';
+import type { LoadType, SetHistoryRow, Workout, WorkoutSet } from '../../../src/db/types';
 import { Dialog } from '../../../src/components/Dialog';
 import { RestTimerCard } from '../../../src/components/RestTimer';
 import { Button, Card, Empty, Loading, SectionTitle, Stepper } from '../../../src/components/ui';
@@ -21,6 +21,7 @@ import { formatAgo, formatDate, formatLoad, formatTime, formatWeight, parseNumbe
 import { prefs } from '../../../src/lib/prefs';
 import { describeHit, findRecords, mainHit, type PrHit } from '../../../src/lib/records';
 import { useRestTimer } from '../../../src/lib/restTimer';
+import { DEFAULT_STEP, inferStepFromHistory } from '../../../src/lib/stepSize';
 import { radius, space, useTheme } from '../../../src/theme';
 import { KeyboardScrollView } from '../../../src/components/KeyboardScrollView';
 
@@ -43,6 +44,8 @@ export default function ExerciseLogScreen() {
   const [editingSetId, setEditingSetId] = useState<string | null>(null);
   // Personal records among this workout's sets (worked out from the exercise's whole history)
   const [records, setRecords] = useState(new Map<string, PrHit[]>());
+  // The exercise's whole set history (also used for the stepper increment); refreshed with records
+  const [history, setHistory] = useState<SetHistoryRow[]>([]);
   // "New PR" banner after logging a record set; hides itself after a few seconds
   const [banner, setBanner] = useState<string[] | null>(null);
 
@@ -54,7 +57,9 @@ export default function ExerciseLogScreen() {
 
   /** Recomputes which of this workout's sets are records (after any add, edit or delete). */
   const loadRecords = useCallback(async () => {
-    const all = findRecords(await listExerciseSetHistory(db, exerciseId));
+    const hist = await listExerciseSetHistory(db, exerciseId);
+    setHistory(hist);
+    const all = findRecords(hist);
     const mine = new Map<string, PrHit[]>();
     for (const s of await listSets(db, workoutId, exerciseId)) {
       const hits = all.get(s.id);
@@ -66,6 +71,10 @@ export default function ExerciseLogScreen() {
 
   const loadType: LoadType = exercise?.load_type ?? 'weight';
   const isFinished = workout?.ended_at != null;
+  // Stepper increment learnt from recent weights (machines step 2, 2.5, 3, 7 kg…); see lib/stepSize
+  const { step: weightStep, learnt: stepLearnt } = history.length
+    ? inferStepFromHistory(history, loadType)
+    : { step: DEFAULT_STEP[loadType], learnt: false };
 
   /** Suggest the next set: repeat the last one done today, else match last session's equivalent set. */
   const prefill = (current: WorkoutSet[], last: WorkoutSet[], unit: LoadType) => {
@@ -256,13 +265,13 @@ export default function ExerciseLogScreen() {
           <View style={{ flexDirection: 'row', gap: space.md }}>
             <Stepper
               label={
-                loadType === 'level' ? 'level'
+                (loadType === 'level' ? 'level'
                 : loadType === 'bodyweight' ? ((parseNumber(weight) ?? 0) < 0 ? 'assist kg (−)' : 'added kg')
-                : 'kg'
+                : 'kg') + (stepLearnt ? ` · ±${formatWeight(weightStep)}` : '')
               }
               value={weight}
               onChange={setWeight}
-              step={loadType === 'level' ? 1 : 2.5}
+              step={weightStep}
               decimal={loadType !== 'level'}
               allowNegative={loadType === 'bodyweight'}
             />
