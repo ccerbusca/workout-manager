@@ -12,6 +12,12 @@ export interface Exercise {
   load_type: LoadType;
 }
 
+/** Any exercise with how often it's been done (0 / null when never), as listed in the exercise picker. */
+export interface ExerciseUsage extends Exercise {
+  session_count: number;
+  last_at: number | null;
+}
+
 /** An exercise with logged sets, as listed on the Progress tab. */
 export interface TrainedExercise extends Exercise {
   session_count: number;

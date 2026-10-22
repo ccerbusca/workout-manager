@@ -1,5 +1,6 @@
 import React, { forwardRef } from 'react';
-import { KeyboardAvoidingView, ScrollView, type ScrollViewProps } from 'react-native';
+import { KeyboardAvoidingView, type ScrollViewProps } from 'react-native';
+import Animated, { type AnimatedRef } from 'react-native-reanimated';
 import { useHeaderHeight } from 'expo-router/react-navigation';
 
 /**
@@ -14,14 +15,21 @@ import { useHeaderHeight } from 'expo-router/react-navigation';
  * the keyboard position is in screen coordinates; `keyboardVerticalOffset` = header height (including
  * the status bar) reconciles the two.
  *
+ * The ScrollView is Reanimated's, so a ref from useAnimatedRef can be passed as `animatedRef` for
+ * drag-and-drop lists that scroll while dragging (react-native-sortables' scrollableRef). It behaves
+ * like a plain one otherwise.
+ *
  * (react-native-keyboard-controller was tried first, but on Android its provider takes over the app's
  * root window insets and left an empty strip above every native stack header.)
  */
-export const KeyboardScrollView = forwardRef<ScrollView, ScrollViewProps>(function KeyboardScrollView(props, ref) {
+export const KeyboardScrollView = forwardRef<
+  Animated.ScrollView,
+  ScrollViewProps & { animatedRef?: AnimatedRef<Animated.ScrollView> }
+>(function KeyboardScrollView({ animatedRef, ...props }, ref) {
   const headerHeight = useHeaderHeight();
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={headerHeight}>
-      <ScrollView ref={ref} keyboardShouldPersistTaps="handled" {...props} />
+      <Animated.ScrollView ref={animatedRef ?? ref} keyboardShouldPersistTaps="handled" {...props} />
     </KeyboardAvoidingView>
   );
 });

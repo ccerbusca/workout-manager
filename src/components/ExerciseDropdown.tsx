@@ -10,8 +10,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { TrainedExercise } from '../db/types';
+import { muscleGroupFilters, searchExercises } from '../lib/exerciseSearch';
 import { formatDayMonth } from '../lib/format';
 import { radius, space, useTheme } from '../theme';
+import { FilterChip } from './FilterChip';
 import { useOverlay, useOverlayOrigin } from './Overlay';
 
 /** Below this much room under the card, the list opens upwards if there's more space there. */
@@ -65,24 +67,10 @@ export function ExerciseDropdown(props: {
 
   const selected = props.exercises.find((e) => e.id === props.selectedId);
 
-  // Filter chips: groups that trained exercises have, most common first
-  const groups = useMemo(() => {
-    const count = new Map<string, number>();
-    for (const e of props.exercises) for (const g of props.groupsByExercise.get(e.id) ?? []) count.set(g, (count.get(g) ?? 0) + 1);
-    return [...count.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([g]) => g);
-  }, [props.exercises, props.groupsByExercise]);
-
-  const q = query.trim().toLowerCase();
-  const inGroup = props.exercises.filter((e) => !group || (props.groupsByExercise.get(e.id) ?? []).includes(group));
-  // Exercises whose name matches come first, then ones that only match by muscle group;
-  // each part keeps the list's order (most recently done, then most-trained)
-  const visible =
-    q === ''
-      ? inGroup
-      : [
-          ...inGroup.filter((e) => e.name.toLowerCase().includes(q)),
-          ...inGroup.filter((e) => !e.name.toLowerCase().includes(q) && (e.muscle_groups ?? '').toLowerCase().includes(q)),
-        ];
+  // Filter chips: groups that trained exercises have, most common first (lib/exerciseSearch)
+  const groups = useMemo(() => muscleGroupFilters(props.exercises, props.groupsByExercise), [props.exercises, props.groupsByExercise]);
+  // Name matches first, then muscle-group matches, each in the list's order (most recent, most trained)
+  const visible = searchExercises(props.exercises, props.groupsByExercise, query, group);
 
   const open = () =>
     anchorRef.current?.measureInWindow((x, y, w, h) => {
@@ -349,26 +337,5 @@ export function ExerciseDropdown(props: {
       </Pressable>
 
     </>
-  );
-}
-
-function FilterChip(props: { label: string; active: boolean; onPress: () => void }) {
-  const { colors } = useTheme();
-  return (
-    <Pressable
-      onPress={props.onPress}
-      style={{
-        paddingHorizontal: space.md,
-        paddingVertical: 6,
-        borderRadius: radius.lg,
-        borderWidth: 1,
-        borderColor: props.active ? colors.accent : colors.border,
-        backgroundColor: props.active ? colors.accent : 'transparent',
-      }}
-    >
-      <Text style={{ color: props.active ? colors.accentText : colors.textDim, fontWeight: '700', fontSize: 13 }}>
-        {props.label}
-      </Text>
-    </Pressable>
   );
 }

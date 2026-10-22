@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
+import Animated, { useAnimatedRef } from 'react-native-reanimated';
+import Sortable from 'react-native-sortables';
 import { Dialog } from '../../src/components/Dialog';
 import { router, Stack, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
@@ -12,6 +14,7 @@ import {
   listAllSetsForWorkout,
   listWorkoutExercises,
   previousSets,
+  reorderWorkoutExercises,
   setExerciseLoadType,
 } from '../../src/db/repo';
 import { ElapsedTime } from '../../src/components/ElapsedTime';
@@ -71,8 +74,10 @@ interface OverviewRow extends WorkoutExercise {
 }
 
 /**
- * The exercises in a workout. Each row shows sets done, last time, and a KG | LVL switch; tapping a
- * row opens that exercise's logging screen (app/log/...). For a workout in progress it has a live
+ * The exercises in a workout. Each row shows sets done, last time, and a KG | LVL | BW switch;
+ * tapping a row opens that exercise's logging screen (app/log/...). Holding a row picks it up to
+ * reorder (react-native-sortables); for a workout in progress the routine takes the new order too
+ * (reorderWorkoutExercises). For a workout in progress it has a live
  * timer, the rest bar and Finish/Discard, and going back asks whether to discard it. For a finished
  * workout (a past one being logged, or one being edited) it has a "Done" button instead.
  */
@@ -92,6 +97,13 @@ function WorkoutOverview({
   const [rows, setRows] = useState<OverviewRow[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const scrollRef = useAnimatedRef<Animated.ScrollView>();
+
+  // Drag and drop: show the new order immediately, then save it (and the routine's, if in progress)
+  const onReorder = ({ data }: { data: OverviewRow[] }) => {
+    setRows(data);
+    reorderWorkoutExercises(db, workout.id, data.map((r) => r.id));
+  };
 
   const load = useCallback(async () => {
     const list = await listWorkoutExercises(db, workout.id);
@@ -180,6 +192,7 @@ function WorkoutOverview({
         }}
       />
       <KeyboardScrollView
+        animatedRef={scrollRef}
         contentContainerStyle={{ padding: space.lg, paddingBottom: space.xl * 2, gap: space.sm }}
         keyboardShouldPersistTaps="handled"
       >
@@ -196,38 +209,48 @@ function WorkoutOverview({
         {!isFinished ? <RestTimerBar /> : null}
 
         {rows.length === 0 ? <Empty title="No exercises yet" hint="Add one to start logging." /> : null}
-        {rows.map((e) => (
-          <Pressable
-            key={e.id}
-            onPress={() => openExercise(e.exercise_id)}
-            style={({ pressed }) => ({
-              borderRadius: radius.lg,
-              borderWidth: 1,
-              borderColor: e.set_count > 0 ? colors.accent : colors.border,
-              backgroundColor: pressed ? colors.surfaceAlt : colors.surface,
-              paddingHorizontal: space.lg,
-              paddingVertical: space.md,
-              gap: space.xs,
-            })}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-              <Text style={[font.h2, { flex: 1, fontSize: 18 }]} numberOfLines={1}>
-                {e.name}
-              </Text>
-              {e.set_count > 0 ? (
-                <Text style={{ color: colors.accent, fontWeight: '800', fontVariant: ['tabular-nums'] }}>✓{e.set_count}</Text>
-              ) : null}
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-              {/* Shrinks a little on narrow screens instead of wrapping, so the card stays two lines tall */}
-              <Text style={[font.dim, { flex: 1, fontSize: 13 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
-                {e.last?.sets.length ? `Last: ${formatSessionSummary(e.last.started_at, e.last.sets, e.load_type)}` : 'First time'}
-              </Text>
-              <UnitToggle value={e.load_type} onChange={(lt) => setUnit(e.exercise_id, lt)} />
-              <Text style={{ color: colors.textFaint, fontSize: 22, marginTop: -2 }}>›</Text>
-            </View>
-          </Pressable>
-        ))}
+        <Sortable.Grid
+          columns={1}
+          rowGap={space.sm}
+          data={rows}
+          keyExtractor={(e) => e.id}
+          scrollableRef={scrollRef}
+          // Hold to pick up; a quick tap still opens the exercise
+          dragActivationDelay={300}
+          onDragEnd={onReorder}
+          renderItem={({ item: e }) => (
+            <Pressable
+              onPress={() => openExercise(e.exercise_id)}
+              style={({ pressed }) => ({
+                borderRadius: radius.lg,
+                borderWidth: 1,
+                borderColor: e.set_count > 0 ? colors.accent : colors.border,
+                backgroundColor: pressed ? colors.surfaceAlt : colors.surface,
+                paddingHorizontal: space.lg,
+                paddingVertical: space.md,
+                gap: space.xs,
+              })}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+                <Text style={[font.h2, { flex: 1, fontSize: 18 }]} numberOfLines={1}>
+                  {e.name}
+                </Text>
+                {e.set_count > 0 ? (
+                  <Text style={{ color: colors.accent, fontWeight: '800', fontVariant: ['tabular-nums'] }}>✓{e.set_count}</Text>
+                ) : null}
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+                {/* Shrinks a little on narrow screens instead of wrapping, so the card stays two lines tall */}
+                <Text style={[font.dim, { flex: 1, fontSize: 13 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                  {e.last?.sets.length ? `Last: ${formatSessionSummary(e.last.started_at, e.last.sets, e.load_type)}` : 'First time'}
+                </Text>
+                <UnitToggle value={e.load_type} onChange={(lt) => setUnit(e.exercise_id, lt)} />
+                <Text style={{ color: colors.textFaint, fontSize: 22, marginTop: -2 }}>›</Text>
+              </View>
+            </Pressable>
+          )}
+        />
+        {rows.length > 1 ? <Text style={[font.small, { textAlign: 'center' }]}>Hold an exercise to reorder it</Text> : null}
 
         <Pressable
           onPress={() => setPickerOpen(true)}
