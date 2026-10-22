@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import Animated, { useAnimatedRef } from 'react-native-reanimated';
 import Sortable from 'react-native-sortables';
@@ -14,7 +14,7 @@ import {
   listAllSetsForWorkout,
   listWorkoutExercises,
   previousSets,
-  reorderWorkoutExercises,
+  arrangeWorkoutExercises,
   setExerciseLoadType,
 } from '../../src/db/repo';
 import { ElapsedTime } from '../../src/components/ElapsedTime';
@@ -73,12 +73,16 @@ interface OverviewRow extends WorkoutExercise {
   last: { started_at: number; sets: WorkoutSet[] } | null;
 }
 
+/** The drag list: active exercises, the Finished divider, then finished exercises. */
+type OverviewItem = ({ kind: 'exercise' } & OverviewRow) | { kind: 'divider'; id: string };
+const DIVIDER: OverviewItem = { kind: 'divider', id: '__finished__' };
+
 /**
  * The exercises in a workout. Each row shows sets done, last time, and a KG | LVL | BW switch;
  * tapping a row opens that exercise's logging screen (app/log/...). Holding a row picks it up to
- * reorder (react-native-sortables); for a workout in progress the routine takes the new order too
- * (reorderWorkoutExercises). For a workout in progress it has a live
- * timer, the rest bar and Finish/Discard, and going back asks whether to discard it. For a finished
+ * reorder (react-native-sortables). Only this workout's order changes, never the routine's
+ * (arrangeWorkoutExercises); the routine is reordered in the routine editor. For a workout in
+ * progress it has a live timer, the rest bar and Finish/Discard, and going back asks whether to discard it. For a finished
  * workout (a past one being logged, or one being edited) it has a "Done" button instead.
  */
 function WorkoutOverview({
@@ -99,10 +103,36 @@ function WorkoutOverview({
   const [leaving, setLeaving] = useState(false);
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
 
-  // Drag and drop: show the new order immediately, then save it (and the routine's, if in progress)
-  const onReorder = ({ data }: { data: OverviewRow[] }) => {
-    setRows(data);
-    reorderWorkoutExercises(db, workout.id, data.map((r) => r.id));
+  // One drag list with the Finished divider in it: cards above it are active, cards below are
+  // finished, so dragging a card across the divider finishes or un-finishes it. The divider has
+  // no handle (customHandle), so it can't be picked up but moves as cards are dragged past it.
+  const { items, doneCount } = useMemo(() => {
+    const active = rows.filter((r) => r.finished_at == null);
+    const done = rows.filter((r) => r.finished_at != null);
+    const list: OverviewItem[] = rows.length
+      ? [...active.map((r) => ({ kind: 'exercise' as const, ...r })), DIVIDER, ...done.map((r) => ({ kind: 'exercise' as const, ...r }))]
+      : [];
+    return { items: list, doneCount: done.length };
+  }, [rows]);
+
+  // Show the new arrangement immediately, then save it (this workout only; the routine is untouched)
+  const onArrange = ({ data }: { data: OverviewItem[] }) => {
+    const split = data.findIndex((i) => i.kind === 'divider');
+    const t = Date.now();
+    const next: OverviewRow[] = [];
+    data.forEach((item, i) => {
+      if (item.kind !== 'exercise') return;
+      const { kind, ...row } = item;
+      const isDone = i > split;
+      next.push({ ...row, finished_at: isDone ? row.finished_at ?? t : null });
+    });
+    setRows(next);
+    arrangeWorkoutExercises(
+      db,
+      workout.id,
+      next.map((r) => r.id),
+      next.filter((r) => r.finished_at != null).map((r) => r.id),
+    );
   };
 
   const load = useCallback(async () => {
@@ -212,43 +242,27 @@ function WorkoutOverview({
         <Sortable.Grid
           columns={1}
           rowGap={space.sm}
-          data={rows}
-          keyExtractor={(e) => e.id}
+          data={items}
+          keyExtractor={(i) => i.id}
           scrollableRef={scrollRef}
+          customHandle
           // Hold to pick up; a quick tap still opens the exercise
           dragActivationDelay={300}
-          onDragEnd={onReorder}
-          renderItem={({ item: e }) => (
-            <Pressable
-              onPress={() => openExercise(e.exercise_id)}
-              style={({ pressed }) => ({
-                borderRadius: radius.lg,
-                borderWidth: 1,
-                borderColor: e.set_count > 0 ? colors.accent : colors.border,
-                backgroundColor: pressed ? colors.surfaceAlt : colors.surface,
-                paddingHorizontal: space.lg,
-                paddingVertical: space.md,
-                gap: space.xs,
-              })}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-                <Text style={[font.h2, { flex: 1, fontSize: 18 }]} numberOfLines={1}>
-                  {e.name}
-                </Text>
-                {e.set_count > 0 ? (
-                  <Text style={{ color: colors.accent, fontWeight: '800', fontVariant: ['tabular-nums'] }}>✓{e.set_count}</Text>
-                ) : null}
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-                {/* Shrinks a little on narrow screens instead of wrapping, so the card stays two lines tall */}
-                <Text style={[font.dim, { flex: 1, fontSize: 13 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
-                  {e.last?.sets.length ? `Last: ${formatSessionSummary(e.last.started_at, e.last.sets, e.load_type)}` : 'First time'}
-                </Text>
-                <UnitToggle value={e.load_type} onChange={(lt) => setUnit(e.exercise_id, lt)} />
-                <Text style={{ color: colors.textFaint, fontSize: 22, marginTop: -2 }}>›</Text>
-              </View>
-            </Pressable>
-          )}
+          onDragEnd={onArrange}
+          renderItem={({ item }) =>
+            item.kind === 'divider' ? (
+              <FinishedDivider count={doneCount} />
+            ) : (
+              <Sortable.Handle>
+                <ExerciseCard
+                  row={item}
+                  finished={item.finished_at != null}
+                  onOpen={() => openExercise(item.exercise_id)}
+                  onUnit={(lt) => setUnit(item.exercise_id, lt)}
+                />
+              </Sortable.Handle>
+            )
+          }
         />
         {rows.length > 1 ? <Text style={[font.small, { textAlign: 'center' }]}>Hold an exercise to reorder it</Text> : null}
 
@@ -293,6 +307,62 @@ function WorkoutOverview({
           openExercise(e.id);
         }}
       />
+    </View>
+  );
+}
+
+/** One exercise on the workout overview. Finished ones are dimmed but work the same. */
+function ExerciseCard(props: { row: OverviewRow; finished: boolean; onOpen: () => void; onUnit: (lt: LoadType) => void }) {
+  const { colors, font } = useTheme();
+  const { row: e, finished } = props;
+  const tint = finished ? colors.textDim : colors.accent;
+  return (
+    <Pressable
+      onPress={props.onOpen}
+      style={({ pressed }) => ({
+        borderRadius: radius.lg,
+        borderWidth: 1,
+        borderColor: e.set_count > 0 && !finished ? colors.accent : colors.border,
+        backgroundColor: pressed ? colors.surfaceAlt : colors.surface,
+        paddingHorizontal: space.lg,
+        paddingVertical: space.md,
+        gap: space.xs,
+        opacity: finished ? 0.75 : 1,
+      })}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+        <Text style={[font.h2, { flex: 1, fontSize: 18 }, finished && { color: colors.textDim }]} numberOfLines={1}>
+          {e.name}
+        </Text>
+        {e.set_count > 0 ? (
+          <Text style={{ color: tint, fontWeight: '800', fontVariant: ['tabular-nums'] }}>✓{e.set_count}</Text>
+        ) : null}
+      </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+        {/* Shrinks a little on narrow screens instead of wrapping, so the card stays two lines tall */}
+        <Text style={[font.dim, { flex: 1, fontSize: 13 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+          {e.last?.sets.length ? `Last: ${formatSessionSummary(e.last.started_at, e.last.sets, e.load_type)}` : 'First time'}
+        </Text>
+        <UnitToggle value={e.load_type} onChange={props.onUnit} />
+        <Text style={{ color: colors.textFaint, fontSize: 22, marginTop: -2 }}>›</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+/** "FINISHED · 2" between active and finished exercises; with none yet, says how cards get there. */
+function FinishedDivider({ count }: { count: number }) {
+  const { colors, font } = useTheme();
+  return (
+    <View style={{ paddingTop: space.md, paddingBottom: space.xs, gap: 2 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+        <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
+        <Text style={[font.small, { letterSpacing: 1, fontWeight: '700' }]}>FINISHED{count ? ` · ${count}` : ''}</Text>
+        <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
+      </View>
+      {count === 0 ? (
+        <Text style={[font.small, { textAlign: 'center' }]}>Tap Finish exercise, or drag an exercise below this line</Text>
+      ) : null}
     </View>
   );
 }

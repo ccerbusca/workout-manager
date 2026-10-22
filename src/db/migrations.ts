@@ -257,6 +257,13 @@ const MIGRATIONS: string[] = [
 
   DROP TABLE _v8_renumber;
   `,
+
+  // v9 — an exercise can be marked finished within a workout ("Finish exercise"), which moves its
+  //      card into the Finished part of the workout overview. NULL = still active; nothing existing
+  //      changes.
+  `
+  ALTER TABLE workout_exercises ADD COLUMN finished_at INTEGER;
+  `,
 ];
 
 export async function migrate(db: SQLiteDatabase): Promise<void> {

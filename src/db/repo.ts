@@ -402,58 +402,55 @@ export async function reorderRoutineExercises(db: SQLiteDatabase, orderedIds: st
 // ───────────────────────── Workouts ─────────────────────────
 
 /**
- * Saves a new exercise order for a workout (workout_exercises ids, top to bottom). For a workout in
- * progress that came from a routine, the routine takes the same order: the routine's exercises that
- * are also in the workout are rearranged among the places they already hold, so exercises added
- * only to this workout don't get into the routine, and routine exercises not in this workout stay
- * where they are. A finished workout (logged later or being edited) never changes its routine.
+ * Marks an exercise finished in a workout ("Finish exercise") and moves it to the end, so the
+ * Finished part of the overview lists exercises in the order they were finished. No-op if it's
+ * already finished.
  */
-export async function reorderWorkoutExercises(db: SQLiteDatabase, workoutId: string, orderedIds: string[]): Promise<void> {
+export async function finishWorkoutExercise(db: SQLiteDatabase, workoutId: string, exerciseId: string): Promise<void> {
   const t = now();
+  await db.runAsync(
+    `UPDATE workout_exercises
+        SET finished_at = ?, updated_at = ?,
+            position = (SELECT COALESCE(MAX(position), -1) + 1 FROM workout_exercises WHERE workout_id = ? AND deleted_at IS NULL)
+      WHERE workout_id = ? AND exercise_id = ? AND deleted_at IS NULL AND finished_at IS NULL`,
+    t, t, workoutId, workoutId, exerciseId,
+  );
+}
+
+/**
+ * Saves the overview after a drag: `orderedIds` (workout_exercises ids) top to bottom, and which of
+ * them are in the Finished part. Exercises dragged into Finished get finished_at now; ones dragged
+ * out lose it.
+ *
+ * Only this workout changes: the routine it came from keeps its order (the user decided reorders
+ * here must never leak into the routine; change a routine's order in the routine editor).
+ */
+export async function arrangeWorkoutExercises(
+  db: SQLiteDatabase,
+  workoutId: string,
+  orderedIds: string[],
+  finishedIds: string[],
+): Promise<void> {
+  const t = now();
+  const finished = new Set(finishedIds);
   await db.withTransactionAsync(async () => {
     for (let i = 0; i < orderedIds.length; i++) {
       await db.runAsync(
         'UPDATE workout_exercises SET position = ?, updated_at = ? WHERE id = ? AND workout_id = ? AND position <> ?',
         i, t, orderedIds[i], workoutId, i,
       );
+      if (finished.has(orderedIds[i])) {
+        await db.runAsync(
+          'UPDATE workout_exercises SET finished_at = ?, updated_at = ? WHERE id = ? AND finished_at IS NULL',
+          t, t, orderedIds[i],
+        );
+      } else {
+        await db.runAsync(
+          'UPDATE workout_exercises SET finished_at = NULL, updated_at = ? WHERE id = ? AND finished_at IS NOT NULL',
+          t, orderedIds[i],
+        );
+      }
     }
-
-    const w = await db.getFirstAsync<{ routine_id: string | null; ended_at: number | null }>(
-      'SELECT routine_id, ended_at FROM workouts WHERE id = ? AND deleted_at IS NULL',
-      workoutId,
-    );
-    if (!w?.routine_id || w.ended_at != null) return;
-    const routine = await db.getFirstAsync('SELECT 1 FROM routines WHERE id = ? AND deleted_at IS NULL', w.routine_id);
-    if (!routine) return;
-
-    // The workout's exercises in their new order
-    const rank = new Map<string, number>();
-    const rows = await db.getAllAsync<{ id: string; exercise_id: string }>(
-      'SELECT id, exercise_id FROM workout_exercises WHERE workout_id = ? AND deleted_at IS NULL',
-      workoutId,
-    );
-    const exerciseOf = new Map(rows.map((r) => [r.id, r.exercise_id]));
-    orderedIds.forEach((id, i) => {
-      const ex = exerciseOf.get(id);
-      if (ex && !rank.has(ex)) rank.set(ex, i);
-    });
-
-    const routineItems = await db.getAllAsync<{ id: string; exercise_id: string; position: number }>(
-      'SELECT id, exercise_id, position FROM routine_exercises WHERE routine_id = ? AND deleted_at IS NULL ORDER BY position',
-      w.routine_id,
-    );
-    // Slots held by exercises that are in the workout, refilled in the workout's order
-    const slots = routineItems.map((r, i) => (rank.has(r.exercise_id) ? i : -1)).filter((i) => i >= 0);
-    const shared = slots.map((i) => routineItems[i]).sort((a, b) => rank.get(a.exercise_id)! - rank.get(b.exercise_id)!);
-    const next = [...routineItems];
-    slots.forEach((slot, k) => (next[slot] = shared[k]));
-    for (let i = 0; i < next.length; i++) {
-      await db.runAsync(
-        'UPDATE routine_exercises SET position = ?, updated_at = ? WHERE id = ? AND position <> ?',
-        i, t, next[i].id, i,
-      );
-    }
-    await db.runAsync('UPDATE routines SET updated_at = ? WHERE id = ?', t, w.routine_id);
   });
 }
 
@@ -575,7 +572,7 @@ export async function countWorkoutHistory(db: SQLiteDatabase): Promise<number> {
 
 export function listWorkoutExercises(db: SQLiteDatabase, workoutId: string): Promise<WorkoutExercise[]> {
   return db.getAllAsync<WorkoutExercise>(
-    `SELECT we.id, we.exercise_id, e.name, e.load_type, we.position,
+    `SELECT we.id, we.exercise_id, e.name, e.load_type, we.position, we.finished_at,
             (SELECT COUNT(*) FROM workout_sets s
              WHERE s.workout_id = we.workout_id AND s.exercise_id = we.exercise_id
                AND s.deleted_at IS NULL) AS set_count

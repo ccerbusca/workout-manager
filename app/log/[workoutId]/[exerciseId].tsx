@@ -4,6 +4,7 @@ import Animated, { FadeInDown, FadeOut } from 'react-native-reanimated';
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import {
+  finishWorkoutExercise,
   addSet,
   deleteSet,
   getExercise,
@@ -280,12 +281,16 @@ export default function ExerciseLogScreen() {
           <Button title={editingSetId ? 'Update set' : `Log set ${sets.length + 1}`} big onPress={logSet} />
         </Card>
 
-        {/* Sets are saved as you log them; this just makes "done with this exercise" an explicit step */}
+        {/* Sets are saved as you log them; this makes "done with this exercise" an explicit step, and
+            moves its card into Finished on the workout overview (going back without it doesn't) */}
         <Button
           title={isFinished ? 'Done' : 'Finish exercise'}
           variant="secondary"
           style={{ marginTop: space.md }}
-          onPress={() => router.back()}
+          onPress={async () => {
+            if (!isFinished) await finishWorkoutExercise(db, workoutId, exerciseId);
+            router.back();
+          }}
         />
       </KeyboardScrollView>
     </>

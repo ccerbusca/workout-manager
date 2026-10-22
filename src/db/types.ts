@@ -68,6 +68,8 @@ export interface WorkoutExercise {
   load_type: LoadType;
   position: number;
   set_count: number;
+  /** When "Finish exercise" was used (or the card was dragged into Finished); null = active. */
+  finished_at: number | null;
 }
 
 export interface WorkoutSet {
